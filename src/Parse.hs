@@ -81,16 +81,18 @@ getPos :: P Pos
 getPos = do pos <- getPosition
             return $ Pos (sourceLine pos) (sourceColumn pos)
 
-tyatom :: P Ty
-tyatom = (reserved "Nat" >> return NatTy)
-         <|> parens typeP
+tyatom :: P STy
+tyatom = (reserved "Nat" >> return SNatTy)
+         <|> parens typeP 
+         <|> (do t <- var
+                 return (STypeN t))
 
-typeP :: P Ty
+typeP :: P STy
 typeP = try (do 
           x <- tyatom
           reservedOp "->"
           y <- typeP
-          return (FunTy x y))
+          return (SFunTy x y))
       <|> tyatom
           
 const :: P Const
@@ -121,7 +123,7 @@ atom =     (flip SConst <$> const <*> getPos)
        <|> printOp
 
 -- parsea un par (variable : tipo)
-binding :: P (Name, Ty)
+binding :: P (Name, STy)
 binding = do v <- var
              reservedOp ":"
              ty <- typeP
@@ -130,10 +132,10 @@ binding = do v <- var
 lam :: P STerm
 lam = do i <- getPos
          reserved "fun"
-         (v,ty) <- parens binding
+         binders <- many1 (parens binding)
          reservedOp "->"
          t <- expr
-         return (SLam i (v,ty) t)
+         return (SLam i binders t)
 
 -- Nota el parser app también parsea un solo atom.
 app :: P STerm
@@ -156,43 +158,65 @@ fix :: P STerm
 fix = do i <- getPos
          reserved "fix"
          (f, fty) <- parens binding
-         (x, xty) <- parens binding
+         binders <- many1 (parens binding)
          reservedOp "->"
          t <- expr
-         return (SFix i (f,fty) (x,xty) t)
+         return (SFix i (f,fty) binders t)
+
+letbinders :: P [(Name, STy)]
+letbinders = do x <- var
+                binders <- many (parens binding)
+                reservedOp ":"
+                t <- typeP
+                return ((x,t) : binders)
 
 letexp :: P STerm
 letexp = do
   i <- getPos
   reserved "let"
-  (v,ty) <- parens binding
+  b <- try (do reserved "rec"
+               return True) <|> return False
+  binders <- (parens letbinders) <|> letbinders
   reservedOp "="  
   def <- expr
   reserved "in"
   body <- expr
-  return (SLet i (v,ty) def body)
+  return (SLet i b binders def body)
 
 -- | Parser de términos
 tm :: P STerm
 tm = app <|> lam <|> ifz <|> printOp <|> fix <|> letexp
 
 -- | Parser de declaraciones
-decl :: P (Decl STerm)
+decl :: P (SDecl Pos)
 decl = do 
      i <- getPos
-     reserved "let"
-     v <- var
-     reservedOp "="
-     t <- expr
-     return (Decl i v t)
+     x <- (declDecl i <|> declType i)
+     return x
+
+declDecl :: Pos -> P (SDecl Pos)
+declDecl i = do reserved "let"
+                b <- try (do reserved "rec"
+                             return True) <|> return False
+                binders <- (parens letbinders) <|> letbinders
+                reservedOp "="
+                t <- expr
+                return (SDDecl i b binders t)
+
+declType :: Pos -> P (SDecl Pos)
+declType i = do reserved "type"
+                v <- var
+                reservedOp "="
+                t <- typeP
+                return (SDType i v t)
 
 -- | Parser de programas (listas de declaraciones) 
-program :: P [Decl STerm]
+program :: P [(SDecl Pos)]
 program = many decl
 
 -- | Parsea una declaración a un término
 -- Útil para las sesiones interactivas
-declOrTm :: P (Either (Decl STerm) STerm)
+declOrTm :: P (Either (SDecl Pos) STerm)
 declOrTm =  try (Left <$> decl) <|> (Right <$> expr)
 
 -- Corre un parser, chequeando que se pueda consumir toda la entrada

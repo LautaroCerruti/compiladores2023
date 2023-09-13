@@ -36,9 +36,9 @@ data STm info ty var =
   | SLet info Bool ([(var,ty)]) (STm info ty var) (STm info ty var)
   deriving (Show, Functor)
 
-data STy = NatTy | FunTy STy STy | TypeN Name
+data STy = SNatTy | SFunTy STy STy | STypeN Name deriving (Show,Eq)
 
-data SDecl info = SDType info Name STy | SDDecl info Bool ([(Name,STy)]) Name STerm
+data SDecl info = SDType info Name STy | SDDecl info Bool ([(Name,STy)]) STerm deriving (Show, Functor)
 
 -- | AST de Tipos
 data Ty =
@@ -48,7 +48,7 @@ data Ty =
 
 type Name = String
 
-type STerm = STm Pos Ty Name -- ^ 'STm' tiene 'Name's como variables ligadas y libres y globales, guarda posición  
+type STerm = STm Pos STy Name -- ^ 'STm' tiene 'Name's como variables ligadas y libres y globales, guarda posición  
 
 newtype Const = CNat Int
   deriving Show
