@@ -37,12 +37,12 @@ elab' env (SLam p [(v,ty)] t) = do e <- elab' (v:env) t
 elab' env (SLam p ((v,ty):vs) t) = do e <- elab' (v:env) (SLam p vs t) 
                                       return $ Lam p v ty (close v e)
 
-
-
--- WIP
-elab' env (SFix p (f,fty) (x,xty) t) = Fix p f fty x xty (close2 f x (elab' (x:f:env) t))
-
-
+elab' env (SFix p (f,fty) [] t) = failPosFD4 p "Elab: Fix sin Argumentos"
+elab' env (SFix p (f,fty) [(x,xty)] t) = do e <- elab' (x:f:env) t
+                                            return $ Fix p f fty x xty (close2 f x e)
+   
+elab' env (SFix p (f,fty) [(x,xty):xs] t) = do e <- elab' (x:f:env) (SLam p xs t)
+                                               return $ Fix p f fty x xty (close2 f x e)
 
 elab' env (SIfZ p c t e) = do c' <- elab' env c
                               t' <- elab' env t
@@ -52,18 +52,34 @@ elab' env (SIfZ p c t e) = do c' <- elab' env c
 elab' env (SBinaryOp i o t u) = do t' <- elab' env t
                                    u' <= elab' env u 
                                    return $ BinaryOp i o t' u'
--- Operador Print (VER FD4)
-elab' env (SPrint i str t) = do t' <= elab' env t
-                                return $ Print i str t' 
+-- Operador Print
+elab' env (SPrint i str (Just t)) = do t' <= elab' env t
+                                       return $ Print i str t' 
+elab' env (SPrint i str Nothing) = do t' <= elab' env t
+                                      return $ Lam i "x" NatTy (Print i str t') 
 -- Aplicaciones generales
 elab' env (SApp p h a) = do h' <- elab' env h
                             a' <- elab' env a
                             return $ App p h' a'
 
 
--- WIP
-elab' env (SLet p (v,vty) def body) =  
-  Let p v vty (elab' env def) (close v (elab' (v:env) body))
+elab' env (SLet p _ [] def body) = failPosFD4 p "Elab: Let sin Argumentos" -- No deberia ocurrir
+elab' env (SLet p False [(v,vty)] def body) = do d <- elab' env def
+                                                 b <- elab' (v:env) body
+                                                 return $ Let p v vty d (close v b)
+elab' env (SLet p False [(f,fty):vs] def body) = do b <- elab' (f:env) body
+                                                    d <- elab' env (SLam p vs def)
+                                                    return $ Let p f (getLetTy fty vs) d (close f b)
+
+elab' env (SLet p True [(f,fty)] def body) = failPosFD4 p "Elab: Let Rec sin Argumentos"
+elab' env (SLet p True [(f,fty):(v,vty)] def body) = do b <- elab' (f:env) body
+                                                        d <- elab' env (SFix p (f,fty) [(x,xty)] def)
+                                                        return $ Let p f (getLetTy fty [(v,vty)]) d (close f b)
+elab' env (SLet p True [(f,fty):(v,vty):vs] def body) = return $ elab' env (SLet p True [(f,(getLetTy fty vs)):(v,vty)] (SLam p vs def) body)
+  
+getLetTy :: STy -> [(Name,STy)] -> STy
+getLetTy ty [] = ty 
+getLetTy ty [(_,vty):vs] = SFunTy vty (getLetTy ty vs)
 
 elabDecl :: Decl STerm -> Decl Term
 elabDecl = fmap elab

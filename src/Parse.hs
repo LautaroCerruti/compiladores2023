@@ -103,7 +103,7 @@ printOp = do
   i <- getPos
   reserved "print"
   str <- option "" stringLiteral
-  a <- atom
+  a <- optionMaybe atom
   return (SPrint i str a)
 
 binary :: String -> BinaryOp -> Assoc -> Operator String () Identity STerm
@@ -158,7 +158,7 @@ fix :: P STerm
 fix = do i <- getPos
          reserved "fix"
          (f, fty) <- parens binding
-         binders <- many1 (parens binding)
+         binders <- many (parens binding)
          reservedOp "->"
          t <- expr
          return (SFix i (f,fty) binders t)
