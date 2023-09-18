@@ -191,7 +191,7 @@ tm = app <|> lam <|> ifz <|> printOp <|> fix <|> letexp
 decl :: P (SDecl Pos)
 decl = do 
      i <- getPos
-     x <- (declDecl i <|> declType i)
+     x <- (declDecl i <|> declTy i)
      return x
 
 declDecl :: Pos -> P (SDecl Pos)
@@ -203,12 +203,12 @@ declDecl i = do reserved "let"
                 t <- expr
                 return (SDDecl i b binders t)
 
-declType :: Pos -> P (SDecl Pos)
-declType i = do reserved "type"
-                v <- var
-                reservedOp "="
-                t <- typeP
-                return (SDType i v t)
+declTy :: Pos -> P (SDecl Pos)
+declTy i = do reserved "type"
+              v <- var
+              reservedOp "="
+              t <- typeP
+              return (SDType i v t)
 
 -- | Parser de programas (listas de declaraciones) 
 program :: P [(SDecl Pos)]

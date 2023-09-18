@@ -27,18 +27,18 @@ import           Data.List.Extra                ( nubSort )
 data STm info ty var =
     SV info var
   | SConst info Const
-  | SLam info ([(var,ty)]) (STm info ty var)
+  | SLam info [(var,ty)] (STm info ty var)
   | SApp info (STm info ty var) (STm info ty var)
   | SPrint info String (Maybe (STm info ty var))
   | SBinaryOp info BinaryOp (STm info ty var) (STm info ty var)
-  | SFix info (var,ty) ([(var,ty)]) (STm info ty var)
+  | SFix info (var,ty) [(var,ty)] (STm info ty var)
   | SIfZ info (STm info ty var) (STm info ty var) (STm info ty var)
-  | SLet info Bool ([(var,ty)]) (STm info ty var) (STm info ty var)
+  | SLet info Bool [(var,ty)] (STm info ty var) (STm info ty var)
   deriving (Show, Functor)
 
 data STy = SNatTy | SFunTy STy STy | STypeN Name deriving (Show,Eq)
 
-data SDecl info = SDType info Name STy | SDDecl info Bool ([(Name,STy)]) STerm deriving (Show, Functor)
+data SDecl = SDType Pos Name STy | SDDecl Pos Bool [(Name,STy)] STerm deriving Show
 
 -- | AST de Tipos
 data Ty =
@@ -60,6 +60,7 @@ data BinaryOp = Add | Sub
 data Decl a = Decl
   { declPos  :: Pos
   , declName :: Name
+  , declType :: Ty
   , declBody :: a
   }
   deriving (Show, Functor)
