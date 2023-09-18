@@ -16,6 +16,8 @@ import Lang
 import Subst
 import MonadFD4
 
+import           Parse                         ( parse )
+
 -- | 'elab' transforma variables ligadas en índices de de Bruijn
 -- en un término dado. 
 elab :: MonadFD4 m => STerm -> m Term
