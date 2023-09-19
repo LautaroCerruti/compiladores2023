@@ -104,12 +104,12 @@ domCod tt = case getTy tt of
 -- | 'tcDecl' chequea el tipo de una declaración
 -- y la agrega al entorno de tipado de declaraciones globales
 tcDecl :: MonadFD4 m  => Decl Term -> m (Decl TTerm)
-tcDecl (Decl p n t) = do
+tcDecl (Decl p n ty t) = do
     --chequear si el nombre ya está declarado
     mty <- lookupTy n
     case mty of
         Nothing -> do  --no está declarado 
                   s <- get
                   tt <- tc t (tyEnv s)                 
-                  return (Decl p n tt)
+                  return (Decl p n ty tt)
         Just _  -> failPosFD4 p $ n ++" ya está declarado"
