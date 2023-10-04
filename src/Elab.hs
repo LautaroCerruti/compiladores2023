@@ -82,7 +82,7 @@ elab' env (SLet p False ((f,fty):vs) def body) = do b <- elab' (f:env) body
 
 elab' env (SLet p True [(f,fty)] def body) = failPosFD4 p "Elab: Let Rec sin Argumentos"
 elab' env (SLet p True [(f,fty),(v,vty)] def body) = do b <- elab' (f:env) body
-                                                        d <- elab' env (SFix p (f,fty) [(v,vty)] def)
+                                                        d <- elab' env (SFix p (f,(getLetTy fty [(v,vty)])) [(v,vty)] def)
                                                         fty' <- elabType (getLetTy fty [(v,vty)])
                                                         return $ Let p f fty' d (close f b)
 elab' env (SLet p True ((f,fty):(v,vty):vs) def body) = elab' env (SLet p True [(f,(getLetTy fty vs)),(v,vty)] (SLam p vs def) body)
