@@ -135,33 +135,44 @@ evalDecl (Decl p x t e) = do
     return (Decl p x t e')
 
 handleDecl ::  MonadFD4 m => SDecl -> m ()
+-- handleDecl (SDecl _ _ _ _)
+-- handleDecl (SDType _ _ _)
 handleDecl d = do
         m <- getMode
         case m of
-          Interactive -> do
-              (Decl p x ty tt) <- typecheckDecl d
-              te <- eval tt
-              addDecl (Decl p x ty te)
-          Typecheck -> do
-              f <- getLastFile
-              printFD4 ("Chequeando tipos de "++f)
-              td <- typecheckDecl d
-              addDecl td
-              -- opt <- getOpt
-              -- td' <- if opt then optimize td else td
-              ppterm <- ppDecl td  --td'
-              printFD4 ppterm
-          Eval -> do
-              td <- typecheckDecl d
-              -- td' <- if opt then optimizeDecl td else return td
-              ed <- evalDecl td
-              addDecl ed
+          Interactive ->
+              case d of
+                (SDecl _ _ _ _) -> do (Decl p x ty tt) <- typecheckDecl d
+                                       te <- eval tt
+                                       addDecl (Decl p x ty te)
+                (SDType _ _ _) -> tyToGlb d
+          Typecheck -> 
+              case d of
+                (SDecl _ _ _ _) -> do f <- getLastFile
+                                      printFD4 ("Chequeando tipos de "++f)
+                                      td <- typecheckDecl d
+                                      addDecl td
+                                      -- opt <- getOpt
+                                      -- td' <- if opt then optimize td else td
+                                      ppterm <- ppDecl td  --td'
+                                      printFD4 ppterm
+                (SDType _ _ _) -> tyToGlb d
+          Eval -> 
+              case d of 
+                (SDecl _ _ _ _) -> do td <- typecheckDecl d
+                                      -- td' <- if opt then optimizeDecl td else return td
+                                      ed <- evalDecl td
+                                      addDecl ed
+                (SDType _ _ _) -> tyToGlb d
 
       where
         typecheckDecl :: MonadFD4 m => SDecl -> m (Decl TTerm)
         typecheckDecl decl@(SDDecl _ _ _ _) = do d' <- elabDecl decl
                                                  tcDecl d'
-        -- typecheckDecl t@(SDType _ _ _ _) = tcDecl (elabType t)
+        tyToGlb :: MonadFD4 m => SDecl -> m ()
+        typecheckDecl t@(SDType _ n sty) = do ty <- elabType sty
+                                              addTy (n, ty)
+
 
 
 data Command = Compile CompileForm

@@ -96,8 +96,11 @@ elabType SNatTy = return $ NatTy
 elabType (SFunTy st st') = do t <- elabType st
                               t' <- elabType st'
                               return $ FunTy t t' 
--- elabType (STypeN name) =
-
+elabType (STypeN name) = do x <- lookupNameTy name      
+                            case x of
+                            (Just ty) -> return ty 
+                            Nothing -> failFD4 $ "Elab: Tipo no encontrado" ++ name
+                            
 
 elabDecl :: MonadFD4 m => SDecl -> m (Decl Term)
 -- elabDecl (SDType p n st) = 

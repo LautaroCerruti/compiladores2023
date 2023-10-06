@@ -21,6 +21,7 @@ module MonadFD4 (
   runFD4,
   lookupDecl,
   lookupTy,
+  lookupNameTy,
   printFD4,
   setLastFile,
   getLastFile,
@@ -32,6 +33,7 @@ module MonadFD4 (
   failPosFD4,
   failFD4,
   addDecl,
+  addTy,
   catchErrors,
   MonadFD4,
   module Control.Monad.Except,
@@ -90,6 +92,9 @@ getLastFile = gets lfile
 addDecl :: MonadFD4 m => Decl TTerm -> m ()
 addDecl d = modify (\s -> s { glb = d : glb s, cantDecl = cantDecl s + 1 })
 
+addTy :: MonadFD4 m => (Name,Ty) -> m ()
+addTy nt = modify (\s -> s { glbTy = nt : glbTy s})
+
 eraseLastFileDecls :: MonadFD4 m => m ()
 eraseLastFileDecls = do
       s <- get
@@ -110,6 +115,13 @@ lookupTy :: MonadFD4 m => Name -> m (Maybe Ty)
 lookupTy nm = do
       s <- get
       return $ lookup nm (tyEnv s)
+
+lookupNameTy :: MonadFD4 m => Name -> m (Maybe Ty)
+lookupNameTy nm = do
+     s <- get
+     case filter (\(name,_) -> nm == name) (glbTy s) of
+       (_,ty):_ -> return (Just ty)
+       [] -> return Nothing
 
 failPosFD4 :: MonadFD4 m => Pos -> String -> m a
 failPosFD4 p s = throwError (ErrPos p s)
