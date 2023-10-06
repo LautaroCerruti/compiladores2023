@@ -1,0 +1,5 @@
+let y : Nat = let f (g : Nat -> Nat) : Nat = g 1 in f (print "y=")
+
+let h (g : Nat -> Nat) : Nat = g 5
+
+let x : Nat = h (print "x=") 

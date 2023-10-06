@@ -1,0 +1,3 @@
+let f : Nat->Nat->Nat = fix (f:Nat->Nat->Nat)(x1:Nat)(x2:Nat)->ifz (x1-x2) then 0 else f (x1) (x2+1)
+
+let x : Nat = print "x=" (f 5 4)

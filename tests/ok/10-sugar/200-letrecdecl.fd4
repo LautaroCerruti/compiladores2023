@@ -1,0 +1,7 @@
+let x : Nat = let rec g(x1:Nat)(x2:Nat):Nat = ifz (x1-x2) then 0 else g (x1) (x2+1) in g 5 1
+
+let z : Nat = let rec h(x:Nat):Nat = ifz x then 0 else h (x-1) in h 5
+
+let rec f(x1:Nat)(x2:Nat):Nat = ifz (x1-x2) then 0 else print "dif " (f (x1) (x2+1))
+
+let y : Nat = f 5 1
