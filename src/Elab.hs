@@ -10,7 +10,7 @@ Este módulo permite elaborar términos y declaraciones para convertirlas desde
 fully named (@STerm) a locally closed (@Term@)
 -}
 
-module Elab ( elab, elabDecl) where
+module Elab ( elab, elabDecl, elabType) where
 
 import Lang
 import Subst
@@ -98,8 +98,8 @@ elabType (SFunTy st st') = do t <- elabType st
                               return $ FunTy t t' 
 elabType (STypeN name) = do x <- lookupNameTy name      
                             case x of
-                            (Just ty) -> return ty 
-                            Nothing -> failFD4 $ "Elab: Tipo no encontrado" ++ name
+                              (Just ty) -> return ty 
+                              Nothing -> failFD4 $ "Elab: Tipo no encontrado" ++ name
                             
 
 elabDecl :: MonadFD4 m => SDecl -> m (Decl Term)

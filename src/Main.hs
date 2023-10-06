@@ -30,7 +30,7 @@ import Global
 import Errors
 import Lang
 import Parse ( P, tm, program, declOrTm, runP )
-import Elab ( elab, elabDecl )
+import Elab ( elab, elabDecl, elabType )
 import Eval ( eval )
 import PPrint ( pp , ppTy, ppDecl )
 import MonadFD4
@@ -142,27 +142,30 @@ handleDecl d = do
         case m of
           Interactive ->
               case d of
-                (SDecl _ _ _ _) -> do (Decl p x ty tt) <- typecheckDecl d
-                                       te <- eval tt
-                                       addDecl (Decl p x ty te)
+                (SDDecl _ _ _ _) -> do 
+                  (Decl p x ty tt) <- typecheckDecl d
+                  te <- eval tt
+                  addDecl (Decl p x ty te)
                 (SDType _ _ _) -> tyToGlb d
           Typecheck -> 
               case d of
-                (SDecl _ _ _ _) -> do f <- getLastFile
-                                      printFD4 ("Chequeando tipos de "++f)
-                                      td <- typecheckDecl d
-                                      addDecl td
-                                      -- opt <- getOpt
-                                      -- td' <- if opt then optimize td else td
-                                      ppterm <- ppDecl td  --td'
-                                      printFD4 ppterm
+                (SDDecl _ _ _ _) -> do 
+                  f <- getLastFile
+                  printFD4 ("Chequeando tipos de "++f)
+                  td <- typecheckDecl d
+                  addDecl td
+                  -- opt <- getOpt
+                  -- td' <- if opt then optimize td else td
+                  ppterm <- ppDecl td  --td'
+                  printFD4 ppterm
                 (SDType _ _ _) -> tyToGlb d
           Eval -> 
               case d of 
-                (SDecl _ _ _ _) -> do td <- typecheckDecl d
-                                      -- td' <- if opt then optimizeDecl td else return td
-                                      ed <- evalDecl td
-                                      addDecl ed
+                (SDDecl _ _ _ _) -> do 
+                  td <- typecheckDecl d
+                  -- td' <- if opt then optimizeDecl td else return td
+                  ed <- evalDecl td
+                  addDecl ed
                 (SDType _ _ _) -> tyToGlb d
 
       where
@@ -170,8 +173,8 @@ handleDecl d = do
         typecheckDecl decl@(SDDecl _ _ _ _) = do d' <- elabDecl decl
                                                  tcDecl d'
         tyToGlb :: MonadFD4 m => SDecl -> m ()
-        typecheckDecl t@(SDType _ n sty) = do ty <- elabType sty
-                                              addTy (n, ty)
+        tyToGlb t@(SDType _ n sty) = do ty <- elabType sty
+                                        addTy (n, ty)
 
 
 
