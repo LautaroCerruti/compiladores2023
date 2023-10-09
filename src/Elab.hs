@@ -16,8 +16,6 @@ import Lang
 import Subst
 import MonadFD4
 
-import           Parse                         ( parse )
-
 -- | 'elab' transforma variables ligadas en índices de de Bruijn
 -- en un término dado. 
 elab :: MonadFD4 m => STerm -> m Term
@@ -63,7 +61,7 @@ elab' env (SBinaryOp i o t u) = do t' <- elab' env t
 -- Operador Print
 elab' env (SPrint i str (Just t)) = do t' <- elab' env t
                                        return $ Print i str t' 
-elab' env (SPrint i str Nothing) = return $ Lam i "x" NatTy (close "x" (Print i str (V i (Free "x"))))
+elab' env (SPrint i str Nothing) = return $ Lam i "x" (NatTy Nothing) (close "x" (Print i str (V i (Free "x"))))
 -- Aplicaciones generales
 elab' env (SApp p h a) = do h' <- elab' env h
                             a' <- elab' env a
@@ -92,11 +90,11 @@ getLetTy ty [] = ty
 getLetTy ty ((_,vty):vs) = SFunTy vty (getLetTy ty vs)
 
 elabType :: MonadFD4 m => STy -> m Ty
-elabType SNatTy = return $ NatTy 
+elabType SNatTy = return (NatTy Nothing) 
 elabType (SFunTy st st') = do t <- elabType st
                               t' <- elabType st'
-                              return $ FunTy t t' 
-elabType (STypeN name) = do x <- lookupNameTy name      
+                              return $ FunTy t t' Nothing
+elabType (STypeN name) = do x <- lookupNameTy name
                             case x of
                               (Just ty) -> return ty 
                               Nothing -> failFD4 $ "Elab: Tipo no encontrado" ++ name
@@ -116,3 +114,4 @@ elabDecl (SDDecl p True [(f,fty),(v,vty)] t) = do t' <- elab (SFix p (f,(getLetT
                                                   fty' <- elabType (getLetTy fty [(v,vty)])
                                                   return $ Decl p f fty' t' 
 elabDecl (SDDecl p True ((f,fty):(v,vty):vs) t) = elabDecl (SDDecl p True [(f,(getLetTy fty vs)),(v,vty)] (SLam p vs t))  
+elabDecl _ = failFD4 "Elab Decl: No es una declaracion"

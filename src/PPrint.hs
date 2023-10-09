@@ -42,8 +42,10 @@ freshen ns n = let cands = n : map (\i -> n ++ show i) [0..]
                in head (filter (`notElem` ns) cands)
 
 toSType :: Ty -> STy 
-toSType NatTy = SNatTy
-toSType (FunTy t t') = SFunTy (toSType t) (toSType t')
+toSType (NatTy Nothing) = SNatTy
+toSType (NatTy (Just name)) = STypeN name
+toSType (FunTy t t' Nothing) = SFunTy (toSType t) (toSType t')
+toSType (FunTy t t' (Just name)) = STypeN name
 
 -- | 'openAll' convierte términos locally nameless
 -- a términos fully named abriendo todos las variables de ligadura que va encontrando
@@ -101,7 +103,7 @@ ty2doc :: STy -> Doc AnsiStyle
 ty2doc SNatTy     = typeColor (pretty "Nat")
 ty2doc (SFunTy x@(SFunTy _ _) y) = sep [parens (ty2doc x), typeOpColor (pretty "->"),ty2doc y]
 ty2doc (SFunTy x y) = sep [ty2doc x, typeOpColor (pretty "->"),ty2doc y] 
-ty2doc (STypeN name) = error "a implementar"
+ty2doc (STypeN name) = typeColor (pretty name)
 
 -- | Pretty printer para tipos (String)
 ppTy :: Ty -> String

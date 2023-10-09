@@ -42,8 +42,8 @@ data SDecl = SDType Pos Name STy | SDDecl Pos Bool [(Name,STy)] STerm deriving S
 
 -- | AST de Tipos
 data Ty =
-      NatTy
-    | FunTy Ty Ty
+      NatTy (Maybe Name)
+    | FunTy Ty Ty (Maybe Name)
     deriving (Show,Eq)
 
 type Name = String

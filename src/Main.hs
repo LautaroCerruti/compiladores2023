@@ -172,9 +172,13 @@ handleDecl d = do
         typecheckDecl :: MonadFD4 m => SDecl -> m (Decl TTerm)
         typecheckDecl decl@(SDDecl _ _ _ _) = do d' <- elabDecl decl
                                                  tcDecl d'
+        typecheckDecl _ = failFD4 "Typecheck: No es una declaracion"
         tyToGlb :: MonadFD4 m => SDecl -> m ()
         tyToGlb t@(SDType _ n sty) = do ty <- elabType sty
-                                        addTy (n, ty)
+                                        case ty of
+                                          NatTy _ -> addTy (n, (NatTy (Just n)))
+                                          FunTy t1 t2 _ -> addTy (n, (FunTy t1 t2 (Just n)))
+        tyToGlb _ = failFD4 "Typecheck: No es un tipo"
 
 
 
