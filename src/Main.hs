@@ -36,6 +36,8 @@ import PPrint ( pp , ppTy, ppDecl )
 import MonadFD4
 import TypeChecker ( tc, tcDecl )
 
+import CEK ( runCEK )
+
 prompt :: String
 prompt = "FD4> "
 
@@ -45,7 +47,7 @@ prompt = "FD4> "
 parseMode :: Parser (Mode,Bool)
 parseMode = (,) <$>
       (flag' Typecheck ( long "typecheck" <> short 't' <> help "Chequear tipos e imprimir el término")
-  -- <|> flag' InteractiveCEK (long "interactiveCEK" <> short 'k' <> help "Ejecutar interactivamente en la CEK")
+      <|> flag' InteractiveCEK (long "interactiveCEK" <> short 'k' <> help "Ejecutar interactivamente en la CEK")
   -- <|> flag' Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la BVM")
   -- <|> flag' RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
       <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
@@ -74,6 +76,8 @@ main = execParser opts >>= go
     go :: (Mode,Bool,[FilePath]) -> IO ()
     go (Interactive,opt,files) =
               runOrFail (Conf opt Interactive) (runInputT defaultSettings (repl files))
+    go (InteractiveCEK,opt,files) =
+              runOrFail (Conf opt InteractiveCEK) (runInputT defaultSettings (repl files))
     go (m,opt, files) =
               runOrFail (Conf opt m) $ mapM_ compileFile files
 
@@ -134,6 +138,11 @@ evalDecl (Decl p x t e) = do
     e' <- eval e
     return (Decl p x t e')
 
+runCEKDecl :: MonadFD4 m => Decl TTerm -> m (Decl TTerm)
+runCEKDecl (Decl p x t e) = do 
+            e' <- runCEK e
+            return $ Decl p x t e'
+
 handleDecl ::  MonadFD4 m => SDecl -> m ()
 -- handleDecl (SDecl _ _ _ _)
 -- handleDecl (SDType _ _ _)
@@ -165,6 +174,14 @@ handleDecl d = do
                   td <- typecheckDecl d
                   -- td' <- if opt then optimizeDecl td else return td
                   ed <- evalDecl td
+                  addDecl ed
+                (SDType _ _ _) -> tyToGlb d
+          InteractiveCEK -> 
+              case d of 
+                (SDDecl _ _ _ _) -> do 
+                  td <- typecheckDecl d
+                  -- td' <- if opt then optimizeDecl td else return td
+                  ed <- runCEKDecl td
                   addDecl ed
                 (SDType _ _ _) -> tyToGlb d
 
