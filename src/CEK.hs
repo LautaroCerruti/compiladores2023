@@ -18,6 +18,7 @@ data Frame =
     | KBOp Env BinaryOp TTerm
     | KAppBOp BinaryOp Val
     | KPrint String 
+    | KLet Env TTerm
 
 type Kont = [Frame]
 
@@ -40,6 +41,7 @@ seek (V _ (Bound i)) e k = destroy (e !! i) k
 seek (Const _ (CNat n)) e k = destroy (ConstN n) k
 seek (Lam _ x ty (Sc1 t)) e k = destroy (VClos (ClosFun e x ty t)) k
 seek (Fix _ f fty x xty (Sc2 t)) e k = destroy (VClos (ClosFix e f fty x xty t)) k
+seek (Let _ _ _ t1 (Sc1 t2)) e k = seek t1 e ((KLet e t2) : k)
 seek _ _ _ = failFD4 "No deberia pasar"
 
 destroy :: MonadFD4 m => Val -> Kont -> m Val 
@@ -53,6 +55,7 @@ destroy (ConstN _) ((KIfZ e _ t) : k) = seek t e k
 destroy (VClos c) ((KArg e t) : k) = seek t e ((KApp c) : k)
 destroy v ((KApp (ClosFun e _ _ t)) : k) = seek t (v : e) k
 destroy v ((KApp f@(ClosFix e _ _ _ _ t)) : k) = seek t (v : ((VClos f) : e)) k   -- ver si es f : v : k
+destroy v ((KLet e t2) : k) = seek t2 (v : e) k
 destroy v [] = return v
 destroy _ _ = failFD4 "No pasaras"
 

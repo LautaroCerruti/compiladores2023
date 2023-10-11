@@ -48,6 +48,7 @@ parseMode :: Parser (Mode,Bool)
 parseMode = (,) <$>
       (flag' Typecheck ( long "typecheck" <> short 't' <> help "Chequear tipos e imprimir el término")
       <|> flag' InteractiveCEK (long "interactiveCEK" <> short 'k' <> help "Ejecutar interactivamente en la CEK")
+      <|> flag' CEK (long "cek" <> short 'l' <> help "Ejecutar en la CEK")
   -- <|> flag' Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la BVM")
   -- <|> flag' RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
       <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
@@ -144,60 +145,41 @@ runCEKDecl (Decl p x t e) = do
             return $ Decl p x t e'
 
 handleDecl ::  MonadFD4 m => SDecl -> m ()
--- handleDecl (SDecl _ _ _ _)
--- handleDecl (SDType _ _ _)
-handleDecl d = do
-        m <- getMode
-        case m of
-          Interactive ->
-              case d of
-                (SDDecl _ _ _ _) -> do 
-                  (Decl p x ty tt) <- typecheckDecl d
-                  te <- eval tt
-                  addDecl (Decl p x ty te)
-                (SDType _ _ _) -> tyToGlb d
-          Typecheck -> 
-              case d of
-                (SDDecl _ _ _ _) -> do 
-                  f <- getLastFile
-                  printFD4 ("Chequeando tipos de "++f)
-                  td <- typecheckDecl d
-                  addDecl td
-                  -- opt <- getOpt
-                  -- td' <- if opt then optimize td else td
-                  ppterm <- ppDecl td  --td'
-                  printFD4 ppterm
-                (SDType _ _ _) -> tyToGlb d
-          Eval -> 
-              case d of 
-                (SDDecl _ _ _ _) -> do 
-                  td <- typecheckDecl d
-                  -- td' <- if opt then optimizeDecl td else return td
-                  ed <- evalDecl td
-                  addDecl ed
-                (SDType _ _ _) -> tyToGlb d
-          InteractiveCEK -> 
-              case d of 
-                (SDDecl _ _ _ _) -> do 
-                  td <- typecheckDecl d
-                  -- td' <- if opt then optimizeDecl td else return td
-                  ed <- runCEKDecl td
-                  addDecl ed
-                (SDType _ _ _) -> tyToGlb d
+handleDecl d@(SDecl _ _ _ _) = do
+    m <- getMode
+    case m of
+      Typecheck -> do 
+          f <- getLastFile
+          printFD4 ("Chequeando tipos de "++f)
+          td <- typecheckDecl d
+          addDecl td
+          -- opt <- getOpt
+          -- td' <- if opt then optimize td else td
+          ppterm <- ppDecl td  --td'
+          printFD4 ppterm
+      Interactive -> run evalDecl d
+      Eval -> run evalDecl d
+      InteractiveCEK -> run runCEKDecl d
+      CEK -> run runCEKDecl d
+    where
+      typecheckDecl :: MonadFD4 m => SDecl -> m (Decl TTerm)
+      typecheckDecl decl@(SDDecl _ _ _ _) = do d' <- elabDecl decl
+                                                tcDecl d'
+      typecheckDecl _ = failFD4 "Typecheck: No es una declaracion"
+      run :: MonadFD4 m => (Decl TTerm -> m (Decl TTerm)) -> SDecl -> m()
+      run f d = do 
+          td <- typecheckDecl d  -- td' <- if opt then optimizeDecl td else return td
+          ed <- f td
+          addDecl ed
 
-      where
-        typecheckDecl :: MonadFD4 m => SDecl -> m (Decl TTerm)
-        typecheckDecl decl@(SDDecl _ _ _ _) = do d' <- elabDecl decl
-                                                 tcDecl d'
-        typecheckDecl _ = failFD4 "Typecheck: No es una declaracion"
-        tyToGlb :: MonadFD4 m => SDecl -> m ()
-        tyToGlb t@(SDType _ n sty) = do ty <- elabType sty
-                                        case ty of
-                                          NatTy _ -> addTy (n, (NatTy (Just n)))
-                                          FunTy t1 t2 _ -> addTy (n, (FunTy t1 t2 (Just n)))
-        tyToGlb _ = failFD4 "Typecheck: No es un tipo"
-
-
+handleDecl t@(SDType _ _ _) = tyToGlb t
+    where
+      tyToGlb :: MonadFD4 m => SDecl -> m ()
+      tyToGlb t@(SDType _ n sty) = do ty <- elabType sty
+                                      case ty of
+                                        NatTy _ -> addTy (n, (NatTy (Just n)))
+                                        FunTy t1 t2 _ -> addTy (n, (FunTy t1 t2 (Just n)))
+      tyToGlb _ = failFD4 "Typecheck: No es un tipo"
 
 data Command = Compile CompileForm
              | PPrint String
@@ -283,12 +265,19 @@ compilePhrase x = do
 
 handleTerm ::  MonadFD4 m => STerm -> m ()
 handleTerm t = do
-         t' <- elab t
-         s <- get
-         tt <- tc t' (tyEnv s)
-         te <- eval tt
-         ppte <- pp te
-         printFD4 (ppte ++ " : " ++ ppTy (getTy tt))
+        t' <- elab t
+        s <- get
+        tt <- tc t' (tyEnv s)
+        m <- getMode
+        case m of
+            InteractiveCEK -> run runCEK tt
+            _ -> run eval tt
+    where
+      run :: MonadFD4 m => (TTerm -> m TTerm) -> STerm -> m()
+      run f t = do 
+          te <- f t
+          ppte <- pp te
+          printFD4 (ppte ++ " : " ++ ppTy (getTy tt))
 
 printPhrase   :: MonadFD4 m => String -> m ()
 printPhrase x =
