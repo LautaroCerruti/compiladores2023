@@ -145,7 +145,7 @@ runCEKDecl (Decl p x t e) = do
             return $ Decl p x t e'
 
 handleDecl ::  MonadFD4 m => SDecl -> m ()
-handleDecl d@(SDecl _ _ _ _) = do
+handleDecl d@(SDDecl _ _ _ _) = do
     m <- getMode
     case m of
       Typecheck -> do 
@@ -164,19 +164,19 @@ handleDecl d@(SDecl _ _ _ _) = do
     where
       typecheckDecl :: MonadFD4 m => SDecl -> m (Decl TTerm)
       typecheckDecl decl@(SDDecl _ _ _ _) = do d' <- elabDecl decl
-                                                tcDecl d'
+                                               tcDecl d'
       typecheckDecl _ = failFD4 "Typecheck: No es una declaracion"
       run :: MonadFD4 m => (Decl TTerm -> m (Decl TTerm)) -> SDecl -> m()
-      run f d = do 
-          td <- typecheckDecl d  -- td' <- if opt then optimizeDecl td else return td
+      run f de = do 
+          td <- typecheckDecl de  -- td' <- if opt then optimizeDecl td else return td
           ed <- f td
           addDecl ed
 
 handleDecl t@(SDType _ _ _) = tyToGlb t
     where
       tyToGlb :: MonadFD4 m => SDecl -> m ()
-      tyToGlb t@(SDType _ n sty) = do ty <- elabType sty
-                                      case ty of
+      tyToGlb (SDType _ n sty) = do ty <- elabType sty
+                                    case ty of
                                         NatTy _ -> addTy (n, (NatTy (Just n)))
                                         FunTy t1 t2 _ -> addTy (n, (FunTy t1 t2 (Just n)))
       tyToGlb _ = failFD4 "Typecheck: No es un tipo"
@@ -273,11 +273,11 @@ handleTerm t = do
             InteractiveCEK -> run runCEK tt
             _ -> run eval tt
     where
-      run :: MonadFD4 m => (TTerm -> m TTerm) -> STerm -> m()
-      run f t = do 
-          te <- f t
+      run :: MonadFD4 m => (TTerm -> m TTerm) -> TTerm -> m()
+      run f t' = do 
+          te <- f t'
           ppte <- pp te
-          printFD4 (ppte ++ " : " ++ ppTy (getTy tt))
+          printFD4 (ppte ++ " : " ++ ppTy (getTy t'))
 
 printPhrase   :: MonadFD4 m => String -> m ()
 printPhrase x =
