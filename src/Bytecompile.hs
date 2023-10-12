@@ -100,6 +100,31 @@ showBC = intercalate "; " . showOps
 
 bcc :: MonadFD4 m => TTerm -> m Bytecode
 bcc t = failFD4 "implementame!"
+bcc (Const _ (CNat v)) = return [CONST, v]
+bcc (BinaryOp _ op t1 t2) = do 
+                              b1 <- bcc t1
+                              b2 <- bcc t2
+                              case op of 
+                                Add -> return $ b1 ++ b2 ++ [ADD]
+                                Sub -> return $ b1 ++ b2 ++ [SUB]
+bcc (V _ (Bound i)) = return [ACCESS, i]
+-- bcc (V _ (Free n)) = return [ACCESS, i]
+-- bcc (V _ (Global n)) = return [ACCESS, i]
+bcc (App _ t1 t2) = do 
+                      b1 <- bcc t1
+                      b2 <- bcc t2
+                      return $ b1 ++ b2 ++ [CALL]
+bcc (Lam _ _ _ (Sc1 t)) = do 
+                            b <- bcc t
+                            return $ [FUNCTION, length b] ++ b ++ [RETURN]
+bcc (Let _ _ _ t1 (Sc1 t2)) = do 
+                      b1 <- bcc t1
+                      b2 <- bcc t2
+                      return $ b1 ++ [SHIFT] ++ b2 ++ [DROP]
+bcc (Fix _ _ _ _ _ (Sc2 t)) = do 
+                            b <- bcc t
+                            return $ [FUNCTION, length b] ++ b ++ [RETURN, FIX]
+
 
 -- ord/chr devuelven los codepoints unicode, o en otras palabras
 -- la codificación UTF-32 del caracter.
