@@ -130,20 +130,13 @@ compileFile f = do
     mode <- getMode
     case mode of
       Bytecompile -> do
-                    declsF <- mapM processDecl decls
-                    bc <- bytecompileModule (catMaybes declsF)
-                    printFD4 $ showBC bc 
-                    liftIO $ bcWrite bc (f ++ ".bc")
+                      declsF <- mapM handleDecl decls
+                      bc <- bytecompileModule (catMaybes declsF)
+                      printFD4 $ showBC bc 
+                      liftIO $ bcWrite bc (f ++ ".bc")
       _ -> do 
             mapM_ handleDecl decls
             setInter i
-
-processDecl :: MonadFD4 m => SDecl -> m (Maybe (Decl TTerm))
-processDecl decl@(SDDecl _ _ _ _) = do 
-                                      d' <- elabDecl decl
-                                      d'' <- tcDecl d'
-                                      return $ Just d''
-processDecl (SDType _ _ _) = return Nothing
 
 parseIO ::  MonadFD4 m => String -> P a -> String -> m a
 parseIO filename p x = case runP p x filename of
@@ -160,7 +153,7 @@ runCEKDecl (Decl p x t e) = do
             e' <- runCEK e
             return $ Decl p x t e'
 
-handleDecl ::  MonadFD4 m => SDecl -> m ()
+handleDecl ::  MonadFD4 m => SDecl -> m (Maybe (Decl TTerm))
 handleDecl d@(SDDecl _ _ _ _) = do
     m <- getMode
     case m of
@@ -173,29 +166,32 @@ handleDecl d@(SDDecl _ _ _ _) = do
           -- td' <- if opt then optimize td else td
           ppterm <- ppDecl td  --td'
           printFD4 ppterm
+          return Nothing
       Interactive -> run evalDecl d
       Eval -> run evalDecl d
       InteractiveCEK -> run runCEKDecl d
       CEK -> run runCEKDecl d
-      _ -> failFD4 "No deberia llegar aca nunca"
+      Bytecompile -> run return d
     where
       typecheckDecl :: MonadFD4 m => SDecl -> m (Decl TTerm)
       typecheckDecl decl@(SDDecl _ _ _ _) = do d' <- elabDecl decl
                                                tcDecl d'
       typecheckDecl _ = failFD4 "Typecheck: No es una declaracion"
-      run :: MonadFD4 m => (Decl TTerm -> m (Decl TTerm)) -> SDecl -> m()
+      run :: MonadFD4 m => (Decl TTerm -> m (Decl TTerm)) -> SDecl -> m(Maybe (Decl TTerm))
       run f de = do 
           td <- typecheckDecl de  -- td' <- if opt then optimizeDecl td else return td
           ed <- f td
           addDecl ed
+          return $ Just ed
 
 handleDecl t@(SDType _ _ _) = tyToGlb t
     where
-      tyToGlb :: MonadFD4 m => SDecl -> m ()
+      tyToGlb :: MonadFD4 m => SDecl -> m (Maybe (Decl TTerm))
       tyToGlb (SDType _ n sty) = do ty <- elabType sty
                                     case ty of
                                         NatTy _ -> addTy (n, (NatTy (Just n)))
                                         FunTy t1 t2 _ -> addTy (n, (FunTy t1 t2 (Just n)))
+                                    return Nothing
       tyToGlb _ = failFD4 "Typecheck: No es un tipo"
 
 data Command = Compile CompileForm
@@ -277,7 +273,7 @@ compilePhrase ::  MonadFD4 m => String -> m ()
 compilePhrase x = do
     dot <- parseIO "<interactive>" declOrTm x
     case dot of
-      Left d  -> handleDecl d
+      Left d  -> void $ handleDecl d
       Right t -> handleTerm t
 
 handleTerm ::  MonadFD4 m => STerm -> m ()
