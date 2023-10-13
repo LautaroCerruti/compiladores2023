@@ -19,6 +19,7 @@ import Lang
 import MonadFD4
 import Common
 import Subst (glb2freeTerm, close)
+import Utils (semOp)
 
 import qualified Data.ByteString.Lazy as BS
 import Data.Binary ( Word32, Binary(put, get), decode, encode )
@@ -166,6 +167,8 @@ bcWrite bs filename = BS.writeFile filename (encode $ BC $ fromIntegral <$> bs)
 -- * Ejecución de bytecode
 ---------------------------
 
+type Env = [Val]
+
 data Val = I Int | Fun Env Bytecode | RA Env Bytecode
 
 -- | Lee de un archivo y lo decodifica a bytecode
@@ -173,7 +176,12 @@ bcRead :: FilePath -> IO Bytecode
 bcRead filename = (map fromIntegral <$> un32) . decode <$> BS.readFile filename
 
 runBC :: MonadFD4 m => Bytecode -> m ()
-runBC bc = failFD4 "implementame!"
+runBC bc = runMacchina bc [] []
 
-runMacchina :: MonadFD4 m => Bytecode -> [Val] -> [Val]
-runMacchina (CONST:n:c) e s = failFD4 "implementame!"
+
+
+runMacchina :: MonadFD4 m => Bytecode -> Env -> [Val] -> m ()
+runMacchina (CONST : n : c) e s = runMacchina c e ((I n) : s)
+runMacchina (ADD : c) e ((I n) : (I m) : s) = runMacchina c e ((I (semOp Add n m)) : s)
+runMacchina (SUB : c) e ((I n) : (I m) : s) = runMacchina c e ((I (semOp Sub n m)) : s)
+runMacchina _ _ _ = return ()
