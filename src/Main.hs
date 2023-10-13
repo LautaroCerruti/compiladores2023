@@ -21,7 +21,8 @@ import Data.List (nub, isPrefixOf, intercalate )
 import Data.Char ( isSpace )
 import Control.Exception ( catch , IOException )
 import System.IO ( hPrint, stderr, hPutStrLn )
-import Data.Maybe ( fromMaybe )
+import Data.Maybe ( fromMaybe, catMaybes )
+import Bytecompile (bytecompileModule, showBC, bcWrite)
 
 import System.Exit ( exitWith, ExitCode(ExitFailure) )
 import Options.Applicative
@@ -49,7 +50,7 @@ parseMode = (,) <$>
       (flag' Typecheck ( long "typecheck" <> short 't' <> help "Chequear tipos e imprimir el término")
       <|> flag' InteractiveCEK (long "interactiveCEK" <> short 'k' <> help "Ejecutar interactivamente en la CEK")
       <|> flag' CEK (long "cek" <> short 'l' <> help "Ejecutar en la CEK")
-  -- <|> flag' Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la BVM")
+      <|> flag' Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la BVM")
   -- <|> flag' RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
       <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
       <|> flag Eval        Eval        (long "eval" <> short 'e' <> help "Evaluar programa")
@@ -126,8 +127,23 @@ compileFile f = do
     setInter False
     when i $ printFD4 ("Abriendo "++f++"...")
     decls <- loadFile f
-    mapM_ handleDecl decls
-    setInter i
+    mode <- getMode
+    case mode of
+      Bytecompile -> do
+                    declsF <- mapM processDecl decls
+                    bc <- bytecompileModule (catMaybes declsF)
+                    printFD4 $ showBC bc 
+                    liftIO $ bcWrite bc (f ++ ".bc")
+      _ -> do 
+            mapM_ handleDecl decls
+            setInter i
+
+processDecl :: MonadFD4 m => SDecl -> m (Maybe (Decl TTerm))
+processDecl decl@(SDDecl _ _ _ _) = do 
+                                      d' <- elabDecl decl
+                                      d'' <- tcDecl d'
+                                      return $ Just d''
+processDecl (SDType _ _ _) = return Nothing
 
 parseIO ::  MonadFD4 m => String -> P a -> String -> m a
 parseIO filename p x = case runP p x filename of
@@ -161,6 +177,7 @@ handleDecl d@(SDDecl _ _ _ _) = do
       Eval -> run evalDecl d
       InteractiveCEK -> run runCEKDecl d
       CEK -> run runCEKDecl d
+      _ -> failFD4 "No deberia llegar aca nunca"
     where
       typecheckDecl :: MonadFD4 m => SDecl -> m (Decl TTerm)
       typecheckDecl decl@(SDDecl _ _ _ _) = do d' <- elabDecl decl

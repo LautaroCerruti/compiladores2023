@@ -17,6 +17,8 @@ module Bytecompile
 
 import Lang
 import MonadFD4
+import Common
+import Subst (glb2freeTerm, close)
 
 import qualified Data.ByteString.Lazy as BS
 import Data.Binary ( Word32, Binary(put, get), decode, encode )
@@ -72,6 +74,7 @@ pattern DROP     = 12
 pattern PRINT    = 13
 pattern PRINTN   = 14
 pattern JUMP     = 15
+pattern THEN     = 16
 
 --función util para debugging: muestra el Bytecode de forma más legible.
 showOps :: Bytecode -> [String]
@@ -93,13 +96,13 @@ showOps (PRINT:xs)       = let (msg,_:rest) = span (/=NULL) xs
                            in ("PRINT " ++ show (bc2string msg)) : showOps rest
 showOps (PRINTN:xs)      = "PRINTN" : showOps xs
 showOps (ADD:xs)         = "ADD" : showOps xs
+showOps (THEN:xs)        = "THEN" : showOps xs
 showOps (x:xs)           = show x : showOps xs
 
 showBC :: Bytecode -> String
 showBC = intercalate "; " . showOps
 
 bcc :: MonadFD4 m => TTerm -> m Bytecode
-bcc t = failFD4 "implementame!"
 bcc (Const _ (CNat v)) = return [CONST, v]
 bcc (BinaryOp _ op t1 t2) = do 
                               b1 <- bcc t1
@@ -124,7 +127,15 @@ bcc (Let _ _ _ t1 (Sc1 t2)) = do
 bcc (Fix _ _ _ _ _ (Sc2 t)) = do 
                             b <- bcc t
                             return $ [FUNCTION, length b] ++ b ++ [RETURN, FIX]
-
+bcc (IfZ _ c t1 t2) = do 
+                        bc <- bcc c
+                        b1 <- bcc t1
+                        b2 <- bcc t2
+                        return $ bc ++ [THEN, length b1] ++ b1 ++ [JUMP, length b2] ++ b2
+bcc (Print _ s t) = do
+                      b <- bcc t
+                      return $ b ++ [PRINT] ++ (string2bc s) ++ [NULL, PRINTN]
+bcc _ = failFD4 "Error: termino desconocido" 
 
 -- ord/chr devuelven los codepoints unicode, o en otras palabras
 -- la codificación UTF-32 del caracter.
@@ -135,7 +146,17 @@ bc2string :: Bytecode -> String
 bc2string = map chr
 
 bytecompileModule :: MonadFD4 m => Module -> m Bytecode
-bytecompileModule m = failFD4 "implementame!"
+bytecompileModule m = do 
+                        b <- bcc (letify (map gl2fr m))
+                        return $ b ++ [STOP]
+
+letify :: Module -> TTerm
+letify [] = error ""
+letify [(Decl _ n ty b)] = b
+letify ((Decl _ n ty b) : xs) = Let (NoPos, ty) n ty b (close n (letify xs)) 
+
+gl2fr :: Decl TTerm -> Decl TTerm
+gl2fr (Decl p n ty t) = Decl p n ty (glb2freeTerm t)
 
 -- | Toma un bytecode, lo codifica y lo escribe un archivo
 bcWrite :: Bytecode -> FilePath -> IO ()
