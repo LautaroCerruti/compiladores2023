@@ -132,7 +132,7 @@ bcc (IfZ _ c t1 t2) = do
                         bc <- bcc c
                         b1 <- bcc t1
                         b2 <- bcc t2
-                        return $ bc ++ [THEN, 1 + length b1] ++ b1 ++ [JUMP, length b2] ++ b2
+                        return $ bc ++ [THEN, 2 + length b1] ++ b1 ++ [JUMP, length b2] ++ b2
 bcc (Print _ s t) = do
                       b <- bcc t
                       return $ b ++ [PRINT] ++ (string2bc s) ++ [NULL, PRINTN]
@@ -184,4 +184,23 @@ runMacchina :: MonadFD4 m => Bytecode -> Env -> [Val] -> m ()
 runMacchina (CONST : n : c) e s = runMacchina c e ((I n) : s)
 runMacchina (ADD : c) e ((I n) : (I m) : s) = runMacchina c e ((I (semOp Add n m)) : s)
 runMacchina (SUB : c) e ((I n) : (I m) : s) = runMacchina c e ((I (semOp Sub n m)) : s)
-runMacchina _ _ _ = return ()
+runMacchina (ACCESS : i : c) e s = runMacchina c e ((e!!i) : s)
+runMacchina (CALL : c) e (v : (Fun ef cf) : s) = runMacchina cf (v : ef) ((RA e c) : s)
+runMacchina (FUNCTION : l : c) e s = runMacchina (drop l c) e ((Fun e (take l c)) : s)
+runMacchina (RETURN : _) _ (v : (RA e c) : s) = runMacchina c e (v : s)
+runMacchina (SHIFT : c) e (v : s) = runMacchina c (v : e) s
+runMacchina (DROP : c) (v : e) s = runMacchina c e s
+runMacchina (PRINTN : c) e a@((I n) : s) = do 
+                                          printFD4 (show n)
+                                          runMacchina c e a
+runMacchina (PRINT : c) e s = let (msg,_:rest) = span (/=NULL) c
+                              in do
+                              printFD4 $ bc2string msg
+                              runMacchina rest e s 
+runMacchina (THEN : l1 : c) e ((I z) : s) = if z == 0 then runMacchina c e s
+                                                      else runMacchina (drop l1 c) e s
+runMacchina (JUMP : l : c) e s = runMacchina (drop l c) e s
+runMacchina (FIX : c) e ((Fun ef cf) : s) = let efix = (Fun efix cf) : e 
+                                            in runMacchina c e ((Fun efix cf) : s)
+runMacchina (STOP : _) _ _ = return ()
+runMacchina _ _ _ = failFD4 "Makima perdio el control"
