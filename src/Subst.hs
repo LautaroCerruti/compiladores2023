@@ -36,6 +36,17 @@ varChanger local bound t = go 0 t where
   go n (BinaryOp p op t u) = BinaryOp p op (go n t) (go n u)
   go n (Let p v vty m (Sc1 o)) = Let p v vty (go n m) (Sc1 (go (n+1) o))
 
+glb2freeTerm :: Tm info Var -> Tm info Var
+glb2freeTerm (V p (Global x)) = V p (Free x) 
+glb2freeTerm (Lam p y ty (Sc1 t))   = Lam p y ty (Sc1 (glb2freeTerm t))
+glb2freeTerm (App p l r)   = App p (glb2freeTerm l) (glb2freeTerm r)
+glb2freeTerm (Fix p f fty x xty (Sc2 t)) = Fix p f fty x xty (Sc2 (glb2freeTerm t))
+glb2freeTerm (IfZ p c t e) = IfZ p (glb2freeTerm c) (glb2freeTerm t) (glb2freeTerm e)
+glb2freeTerm (Print p str t) = Print p str (glb2freeTerm t)
+glb2freeTerm (BinaryOp p op t u) = BinaryOp p op (glb2freeTerm t) (glb2freeTerm u)
+glb2freeTerm (Let p v vty m (Sc1 o)) = Let p v vty (glb2freeTerm m) (Sc1 (glb2freeTerm o))
+glb2freeTerm x = x
+
 -- `open n t` reemplaza la primera variable ligada
 -- en `t` (que debe ser un Scope con una sola variable que 
 -- escapa al término) por el nombre libre `n`.

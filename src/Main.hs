@@ -21,7 +21,8 @@ import Data.List (nub, isPrefixOf, intercalate )
 import Data.Char ( isSpace )
 import Control.Exception ( catch , IOException )
 import System.IO ( hPrint, stderr, hPutStrLn )
-import Data.Maybe ( fromMaybe )
+import Data.Maybe ( fromMaybe, catMaybes )
+import Bytecompile (bytecompileModule, showBC, bcWrite, bcRead, runBC)
 
 import System.Exit ( exitWith, ExitCode(ExitFailure) )
 import Options.Applicative
@@ -35,13 +36,12 @@ import Eval ( eval )
 import PPrint ( pp , ppTy, ppDecl )
 import MonadFD4
 import TypeChecker ( tc, tcDecl )
+import System.FilePath (dropExtension)
 
 import CEK ( runCEK )
 
 prompt :: String
 prompt = "FD4> "
-
-
 
 -- | Parser de banderas
 parseMode :: Parser (Mode,Bool)
@@ -49,8 +49,8 @@ parseMode = (,) <$>
       (flag' Typecheck ( long "typecheck" <> short 't' <> help "Chequear tipos e imprimir el término")
       <|> flag' InteractiveCEK (long "interactiveCEK" <> short 'k' <> help "Ejecutar interactivamente en la CEK")
       <|> flag' CEK (long "cek" <> short 'l' <> help "Ejecutar en la CEK")
-  -- <|> flag' Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la BVM")
-  -- <|> flag' RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
+      <|> flag' Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la BVM")
+      <|> flag' RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
       <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
       <|> flag Eval        Eval        (long "eval" <> short 'e' <> help "Evaluar programa")
   -- <|> flag' CC ( long "cc" <> short 'c' <> help "Compilar a código C")
@@ -79,6 +79,8 @@ main = execParser opts >>= go
               runOrFail (Conf opt Interactive) (runInputT defaultSettings (repl files))
     go (InteractiveCEK,opt,files) =
               runOrFail (Conf opt InteractiveCEK) (runInputT defaultSettings (repl files))
+    go (RunVM,opt,files) =
+              runOrFail (Conf opt RunVM) $ mapM_ runVM files
     go (m,opt, files) =
               runOrFail (Conf opt m) $ mapM_ compileFile files
 
@@ -126,8 +128,21 @@ compileFile f = do
     setInter False
     when i $ printFD4 ("Abriendo "++f++"...")
     decls <- loadFile f
-    mapM_ handleDecl decls
-    setInter i
+    mode <- getMode
+    case mode of
+      Bytecompile -> do
+                      declsF <- mapM handleDecl decls
+                      bc <- bytecompileModule (catMaybes declsF)
+                      printFD4 $ showBC bc 
+                      liftIO $ bcWrite bc (dropExtension f ++ ".bc32")
+      _ -> do 
+            mapM_ handleDecl decls
+            setInter i
+
+runVM :: MonadFD4 m => FilePath -> m ()
+runVM f = do
+            bc <- liftIO $ bcRead f
+            runBC bc
 
 parseIO ::  MonadFD4 m => String -> P a -> String -> m a
 parseIO filename p x = case runP p x filename of
@@ -144,7 +159,7 @@ runCEKDecl (Decl p x t e) = do
             e' <- runCEK e
             return $ Decl p x t e'
 
-handleDecl ::  MonadFD4 m => SDecl -> m ()
+handleDecl ::  MonadFD4 m => SDecl -> m (Maybe (Decl TTerm))
 handleDecl d@(SDDecl _ _ _ _) = do
     m <- getMode
     case m of
@@ -157,28 +172,33 @@ handleDecl d@(SDDecl _ _ _ _) = do
           -- td' <- if opt then optimize td else td
           ppterm <- ppDecl td  --td'
           printFD4 ppterm
+          return Nothing
       Interactive -> run evalDecl d
       Eval -> run evalDecl d
       InteractiveCEK -> run runCEKDecl d
       CEK -> run runCEKDecl d
+      Bytecompile -> run return d
+      _ -> failFD4 "No deberia llegar aca"
     where
       typecheckDecl :: MonadFD4 m => SDecl -> m (Decl TTerm)
       typecheckDecl decl@(SDDecl _ _ _ _) = do d' <- elabDecl decl
                                                tcDecl d'
       typecheckDecl _ = failFD4 "Typecheck: No es una declaracion"
-      run :: MonadFD4 m => (Decl TTerm -> m (Decl TTerm)) -> SDecl -> m()
+      run :: MonadFD4 m => (Decl TTerm -> m (Decl TTerm)) -> SDecl -> m(Maybe (Decl TTerm))
       run f de = do 
           td <- typecheckDecl de  -- td' <- if opt then optimizeDecl td else return td
           ed <- f td
           addDecl ed
+          return $ Just ed
 
 handleDecl t@(SDType _ _ _) = tyToGlb t
     where
-      tyToGlb :: MonadFD4 m => SDecl -> m ()
+      tyToGlb :: MonadFD4 m => SDecl -> m (Maybe (Decl TTerm))
       tyToGlb (SDType _ n sty) = do ty <- elabType sty
                                     case ty of
                                         NatTy _ -> addTy (n, (NatTy (Just n)))
                                         FunTy t1 t2 _ -> addTy (n, (FunTy t1 t2 (Just n)))
+                                    return Nothing
       tyToGlb _ = failFD4 "Typecheck: No es un tipo"
 
 data Command = Compile CompileForm
@@ -260,7 +280,7 @@ compilePhrase ::  MonadFD4 m => String -> m ()
 compilePhrase x = do
     dot <- parseIO "<interactive>" declOrTm x
     case dot of
-      Left d  -> handleDecl d
+      Left d  -> void $ handleDecl d
       Right t -> handleTerm t
 
 handleTerm ::  MonadFD4 m => STerm -> m ()

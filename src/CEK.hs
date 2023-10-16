@@ -3,7 +3,7 @@ module CEK where
 import Lang
 import MonadFD4 ( MonadFD4, lookupDecl, failFD4, printFD4 )
 import PPrint ( ppName )
-
+import Utils (semOp)
 import Common
 
 data Val = ConstN Int | VClos Clos
@@ -21,11 +21,6 @@ data Frame =
     | KLet Env TTerm
 
 type Kont = [Frame]
-
--- | Semántica de operadores binarios
-semOp :: BinaryOp -> Int -> Int -> Int
-semOp Add x y=  x + y
-semOp Sub x y = max 0 (x - y)
 
 seek :: MonadFD4 m => TTerm -> Env -> Kont -> m Val
 seek (Print _ s t) e k = seek t e ((KPrint s) : k)
