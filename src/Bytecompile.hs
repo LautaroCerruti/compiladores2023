@@ -112,8 +112,6 @@ bcc (BinaryOp _ op t1 t2) = do
                                 Add -> return $ b1 ++ b2 ++ [ADD]
                                 Sub -> return $ b1 ++ b2 ++ [SUB]
 bcc (V _ (Bound i)) = return [ACCESS, i]
--- bcc (V _ (Free n)) = return [ACCESS, i]
--- bcc (V _ (Global n)) = return [ACCESS, i]
 bcc (App _ t1 t2) = do 
                       b1 <- bcc t1
                       b2 <- bcc t2
