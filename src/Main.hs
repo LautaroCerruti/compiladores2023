@@ -22,7 +22,7 @@ import Data.Char ( isSpace )
 import Control.Exception ( catch , IOException )
 import System.IO ( hPrint, stderr, hPutStrLn )
 import Data.Maybe ( fromMaybe, catMaybes )
-import Bytecompile (bytecompileModule, showBC, bcWrite)
+import Bytecompile (bytecompileModule, showBC, bcWrite, bcRead, runBC)
 
 import System.Exit ( exitWith, ExitCode(ExitFailure) )
 import Options.Applicative
@@ -36,13 +36,12 @@ import Eval ( eval )
 import PPrint ( pp , ppTy, ppDecl )
 import MonadFD4
 import TypeChecker ( tc, tcDecl )
+import System.FilePath (dropExtension)
 
 import CEK ( runCEK )
 
 prompt :: String
 prompt = "FD4> "
-
-
 
 -- | Parser de banderas
 parseMode :: Parser (Mode,Bool)
@@ -51,7 +50,7 @@ parseMode = (,) <$>
       <|> flag' InteractiveCEK (long "interactiveCEK" <> short 'k' <> help "Ejecutar interactivamente en la CEK")
       <|> flag' CEK (long "cek" <> short 'l' <> help "Ejecutar en la CEK")
       <|> flag' Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la BVM")
-  -- <|> flag' RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
+      <|> flag' RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
       <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
       <|> flag Eval        Eval        (long "eval" <> short 'e' <> help "Evaluar programa")
   -- <|> flag' CC ( long "cc" <> short 'c' <> help "Compilar a código C")
@@ -80,6 +79,8 @@ main = execParser opts >>= go
               runOrFail (Conf opt Interactive) (runInputT defaultSettings (repl files))
     go (InteractiveCEK,opt,files) =
               runOrFail (Conf opt InteractiveCEK) (runInputT defaultSettings (repl files))
+    go (RunVM,opt,files) =
+              runOrFail (Conf opt RunVM) $ mapM_ runVM files
     go (m,opt, files) =
               runOrFail (Conf opt m) $ mapM_ compileFile files
 
@@ -133,10 +134,15 @@ compileFile f = do
                       declsF <- mapM handleDecl decls
                       bc <- bytecompileModule (catMaybes declsF)
                       printFD4 $ showBC bc 
-                      liftIO $ bcWrite bc (f ++ ".bc")
+                      liftIO $ bcWrite bc (dropExtension f ++ ".bc32")
       _ -> do 
             mapM_ handleDecl decls
             setInter i
+
+runVM :: MonadFD4 m => FilePath -> m ()
+runVM f = do
+            bc <- liftIO $ bcRead f
+            runBC bc
 
 parseIO ::  MonadFD4 m => String -> P a -> String -> m a
 parseIO filename p x = case runP p x filename of
@@ -172,6 +178,7 @@ handleDecl d@(SDDecl _ _ _ _) = do
       InteractiveCEK -> run runCEKDecl d
       CEK -> run runCEKDecl d
       Bytecompile -> run return d
+      _ -> failFD4 "No deberia llegar aca"
     where
       typecheckDecl :: MonadFD4 m => SDecl -> m (Decl TTerm)
       typecheckDecl decl@(SDDecl _ _ _ _) = do d' <- elabDecl decl

@@ -93,11 +93,11 @@ showOps (STOP:xs)        = "STOP" : showOps xs
 showOps (JUMP:i:xs)      = ("JUMP off=" ++ show i) : showOps xs
 showOps (SHIFT:xs)       = "SHIFT" : showOps xs
 showOps (DROP:xs)        = "DROP" : showOps xs
-showOps (PRINT:xs)       = let (msg,_:rest) = span (/=NULL) xs
+showOps (PRINT:xs)       = let (msg,rest) = span (/=NULL) xs
                            in ("PRINT " ++ show (bc2string msg)) : showOps rest
 showOps (PRINTN:xs)      = "PRINTN" : showOps xs
 showOps (ADD:xs)         = "ADD" : showOps xs
-showOps (THEN:xs)        = "THEN" : showOps xs
+showOps (THEN:i:xs)        = ("THEN off=" ++ show i) : showOps xs
 showOps (x:xs)           = show x : showOps xs
 
 showBC :: Bytecode -> String
@@ -147,7 +147,7 @@ bc2string :: Bytecode -> String
 bc2string = map chr
 
 bytecompileModule :: MonadFD4 m => Module -> m Bytecode
-bytecompileModule m = do 
+bytecompileModule m = do
                         b <- bcc (letify (map gl2fr m))
                         return $ b ++ [STOP]
 
@@ -178,12 +178,10 @@ bcRead filename = (map fromIntegral <$> un32) . decode <$> BS.readFile filename
 runBC :: MonadFD4 m => Bytecode -> m ()
 runBC bc = runMacchina bc [] []
 
-
-
 runMacchina :: MonadFD4 m => Bytecode -> Env -> [Val] -> m ()
 runMacchina (CONST : n : c) e s = runMacchina c e ((I n) : s)
-runMacchina (ADD : c) e ((I n) : (I m) : s) = runMacchina c e ((I (semOp Add n m)) : s)
-runMacchina (SUB : c) e ((I n) : (I m) : s) = runMacchina c e ((I (semOp Sub n m)) : s)
+runMacchina (ADD : c) e ((I n) : (I m) : s) = runMacchina c e ((I (semOp Add m n)) : s)
+runMacchina (SUB : c) e ((I n) : (I m) : s) = runMacchina c e ((I (semOp Sub m n)) : s)
 runMacchina (ACCESS : i : c) e s = runMacchina c e ((e!!i) : s)
 runMacchina (CALL : c) e (v : (Fun ef cf) : s) = runMacchina cf (v : ef) ((RA e c) : s)
 runMacchina (FUNCTION : l : c) e s = runMacchina (drop l c) e ((Fun e (take l c)) : s)
@@ -195,7 +193,7 @@ runMacchina (PRINTN : c) e a@((I n) : s) = do
                                           runMacchina c e a
 runMacchina (PRINT : c) e s = let (msg,_:rest) = span (/=NULL) c
                               in do
-                              printFD4 $ bc2string msg
+                              printInlineFD4 $ bc2string msg
                               runMacchina rest e s 
 runMacchina (THEN : l1 : c) e ((I z) : s) = if z == 0 then runMacchina c e s
                                                       else runMacchina (drop l1 c) e s
