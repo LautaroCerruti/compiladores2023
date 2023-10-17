@@ -1,4 +1,4 @@
-/* La Verdadera Macchina */
+/* La Vera Macchina */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -105,6 +105,20 @@ static inline env env_push(env e, value v)
 	return new;
 }
 
+static inline env env_pop(env e)
+{
+	return e->next;
+}
+
+static value env_get(env e, int i) 
+{
+	while (i != 0) {
+		e = e->next;
+		i--;
+	}
+	return e->v;
+}
+
 /*
  * Sólo para debugging: devuelve la longitud de un entorno.
  */
@@ -194,8 +208,9 @@ void run(code init_c)
 		/* Consumimos un opcode y lo inspeccionamos. */
 		switch(*c++) {
 		case ACCESS: {
-			/* implementame */
-			abort();
+			int i = *c++;
+			(*s++) = env_get(e, i);
+			break;
 		}
 
 		case CONST: {
@@ -268,8 +283,14 @@ void run(code init_c)
 		}
 
 		case TAILCALL: {
-			/* implementame */
-			abort();
+			value v = *--s;
+
+			struct clo clo = (*--s).clo;
+
+			e = env_push(clo.clo_env, v);
+			c = clo.clo_body;
+			
+			break;
 		}
 
 		case FUNCTION: {
@@ -325,13 +346,14 @@ void run(code init_c)
 		}
 
 		case SHIFT: {
-			/* implementame */
-			abort();
+			value v = *--s;
+			e = env_push(e, v);
+			break;
 		}
 
 		case DROP: {
-			/* implementame */
-			abort();
+			e = env_pop(e);
+			break;
 		}
 
 		case PRINTN: {
@@ -345,6 +367,22 @@ void run(code init_c)
 			while ((wc = *c++))
 				putwchar(wc);
 
+			break;
+		}
+
+		case CJUMP: {
+			value v = *--s;
+			int leng = *c++;
+
+			if (v.i != 0) 
+				c += leng;
+			
+			break;
+		}
+
+		case JUMP: {
+			int leng = *c++;
+			c += leng;
 			break;
 		}
 

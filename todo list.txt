@@ -1,4 +1,5 @@
 P1) Resugaring
 P1) multibinders
-P2) Crear una copia de la maquina en 8 bits
-P2) Comparar ack 3 11 entre la macchina y C nativo
+P3) Comparar ack 3 11 entre la macchina en haskell y C nativo
+P4) Crear una copia de la maquina en 8 bits con las mejoras de la plancha 4
+P4) punto 6, 7 y 8

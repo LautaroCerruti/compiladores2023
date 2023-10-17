@@ -68,6 +68,7 @@ pattern FUNCTION = 4
 pattern CALL     = 5
 pattern ADD      = 6
 pattern SUB      = 7
+pattern CJUMP    = 8
 pattern FIX      = 9
 pattern STOP     = 10
 pattern SHIFT    = 11
@@ -75,7 +76,7 @@ pattern DROP     = 12
 pattern PRINT    = 13
 pattern PRINTN   = 14
 pattern JUMP     = 15
-pattern THEN     = 16
+pattern TAILCALL = 16
 
 --función util para debugging: muestra el Bytecode de forma más legible.
 showOps :: Bytecode -> [String]
@@ -97,7 +98,8 @@ showOps (PRINT:xs)       = let (msg,rest) = span (/=NULL) xs
                            in ("PRINT " ++ show (bc2string msg)) : showOps rest
 showOps (PRINTN:xs)      = "PRINTN" : showOps xs
 showOps (ADD:xs)         = "ADD" : showOps xs
-showOps (THEN:i:xs)        = ("THEN off=" ++ show i) : showOps xs
+showOps (TAILCALL:xs)    = "TAILCALL" : showOps xs
+showOps (CJUMP:i:xs)     = ("CJUMP off=" ++ show i) : showOps xs
 showOps (x:xs)           = show x : showOps xs
 
 showBC :: Bytecode -> String
@@ -117,24 +119,53 @@ bcc (App _ t1 t2) = do
                       b2 <- bcc t2
                       return $ b1 ++ b2 ++ [CALL]
 bcc (Lam _ _ _ (Sc1 t)) = do 
-                            b <- bcc t
-                            return $ [FUNCTION, 1 + length b] ++ b ++ [RETURN]
+                            b <- bct t
+                            return $ [FUNCTION, length b] ++ b
 bcc (Let _ _ _ t1 (Sc1 t2)) = do 
-                      b1 <- bcc t1
-                      b2 <- bcc t2
-                      return $ b1 ++ [SHIFT] ++ b2 ++ [DROP]
+                                b1 <- bcc t1
+                                b2 <- bcc t2
+                                return $ b1 ++ [SHIFT] ++ b2 ++ [DROP]
 bcc (Fix _ _ _ _ _ (Sc2 t)) = do 
-                            b <- bcc t
-                            return $ [FUNCTION, 1 + length b] ++ b ++ [RETURN, FIX]
+                            b <- bct t
+                            return $ [FUNCTION, length b] ++ b ++ [FIX]
 bcc (IfZ _ c t1 t2) = do 
                         bc <- bcc c
                         b1 <- bcc t1
                         b2 <- bcc t2
-                        return $ bc ++ [THEN, 2 + length b1] ++ b1 ++ [JUMP, length b2] ++ b2
+                        return $ bc ++ [CJUMP, 2 + length b1] ++ b1 ++ [JUMP, length b2] ++ b2
 bcc (Print _ s t) = do
                       b <- bcc t
                       return $ b ++ [PRINT] ++ (string2bc s) ++ [NULL, PRINTN]
 bcc _ = failFD4 "Error: termino desconocido" 
+
+bct :: MonadFD4 m => TTerm -> m Bytecode
+bct (App _ t1 t2) = do 
+                      b1 <- bcc t1
+                      b2 <- bcc t2
+                      return $ b1 ++ b2 ++ [TAILCALL]
+bct (IfZ _ c t1 t2) = do
+                        bc <- bcc c
+                        b1 <- bct t1
+                        b2 <- bct t2
+                        return $ bc ++ [CJUMP, length b1] ++ b1 ++ b2
+bct (Let _ _ _ t1 (Sc1 t2)) = do 
+                                b1 <- bcc t1
+                                b2 <- bct t2
+                                return $ b1 ++ [SHIFT] ++ b2
+bct t = do bc <- bcc t
+           return $ bc ++ [RETURN]
+
+bcs :: MonadFD4 m => TTerm -> m Bytecode
+bcs (Let _ _ _ t1 (Sc1 t2)) = do 
+                                b1 <- bcc t1
+                                b2 <- bcs t2
+                                return $ b1 ++ [SHIFT] ++ b2
+bcs (IfZ _ c t1 t2) = do
+                        bc <- bcc c
+                        b1 <- bcs t1
+                        b2 <- bcs t2
+                        return $ bc ++ [CJUMP, 1 + length b1] ++ b1 ++ [STOP] ++ b2
+bcs t = bcc t
 
 -- ord/chr devuelven los codepoints unicode, o en otras palabras
 -- la codificación UTF-32 del caracter.
@@ -146,7 +177,7 @@ bc2string = map chr
 
 bytecompileModule :: MonadFD4 m => Module -> m Bytecode
 bytecompileModule m = do
-                        b <- bcc (letify (map gl2fr m))
+                        b <- bcs (letify (map gl2fr m))
                         return $ b ++ [STOP]
 
 letify :: Module -> TTerm
@@ -168,6 +199,7 @@ bcWrite bs filename = BS.writeFile filename (encode $ BC $ fromIntegral <$> bs)
 type Env = [Val]
 
 data Val = I Int | Fun Env Bytecode | RA Env Bytecode
+  deriving Show
 
 -- | Lee de un archivo y lo decodifica a bytecode
 bcRead :: FilePath -> IO Bytecode
@@ -184,6 +216,7 @@ runMacchina (ACCESS : i : c) e s = runMacchina c e ((e!!i) : s)
 runMacchina (CALL : c) e (v : (Fun ef cf) : s) = runMacchina cf (v : ef) ((RA e c) : s)
 runMacchina (FUNCTION : l : c) e s = runMacchina (drop l c) e ((Fun e (take l c)) : s)
 runMacchina (RETURN : _) _ (v : (RA e c) : s) = runMacchina c e (v : s)
+runMacchina (TAILCALL : _) _ (v : (Fun ef cf) : s) = runMacchina cf (v : ef) s
 runMacchina (SHIFT : c) e (v : s) = runMacchina c (v : e) s
 runMacchina (DROP : c) (v : e) s = runMacchina c e s
 runMacchina (PRINTN : c) e a@((I n) : s) = do 
@@ -193,10 +226,10 @@ runMacchina (PRINT : c) e s = let (msg,_:rest) = span (/=NULL) c
                               in do
                               printInlineFD4 $ bc2string msg
                               runMacchina rest e s 
-runMacchina (THEN : l1 : c) e ((I z) : s) = if z == 0 then runMacchina c e s
-                                                      else runMacchina (drop l1 c) e s
+runMacchina (CJUMP : l1 : c) e ((I z) : s) = if z == 0 then runMacchina c e s
+                                                       else runMacchina (drop l1 c) e s
 runMacchina (JUMP : l : c) e s = runMacchina (drop l c) e s
 runMacchina (FIX : c) e ((Fun ef cf) : s) = let efix = (Fun efix cf) : e 
                                             in runMacchina c e ((Fun efix cf) : s)
 runMacchina (STOP : _) _ _ = return ()
-runMacchina _ _ _ = failFD4 "Makima perdio el control"
+runMacchina c e s = failFD4 $ "Makima perdio el control con " ++ (showBC c)
