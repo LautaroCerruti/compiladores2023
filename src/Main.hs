@@ -22,7 +22,7 @@ import Data.Char ( isSpace )
 import Control.Exception ( catch , IOException )
 import System.IO ( hPrint, stderr, hPutStrLn )
 import Data.Maybe ( fromMaybe, catMaybes )
-import Bytecompile (bytecompileModule, showBC, bcWrite, bcRead, runBC)
+import Bytecompile (bytecompileModule, bcWrite, bcRead, runBC)
 
 import System.Exit ( exitWith, ExitCode(ExitFailure) )
 import Options.Applicative
