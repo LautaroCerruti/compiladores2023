@@ -37,6 +37,7 @@ import PPrint ( pp , ppTy, ppDecl )
 import MonadFD4
 import TypeChecker ( tc, tcDecl )
 import System.FilePath (dropExtension)
+import Optimize (optimizeDecl)
 
 import CEK ( runCEK )
 
@@ -58,9 +59,9 @@ parseMode = (,) <$>
   -- <|> flag' Assembler ( long "assembler" <> short 'a' <> help "Imprimir Assembler resultante")
   -- <|> flag' Build ( long "build" <> short 'b' <> help "Compilar")
       )
-   <*> pure False
+   -- <*> pure False
    -- reemplazar por la siguiente línea para habilitar opción
-   -- <*> flag False True (long "optimize" <> short 'o' <> help "Optimizar código")
+   <*> flag False True (long "optimize" <> short 'o' <> help "Optimizar código")
 
 -- | Parser de opciones general, consiste de un modo y una lista de archivos a procesar
 parseArgs :: Parser (Mode,Bool, [FilePath])
@@ -168,9 +169,9 @@ handleDecl d@(SDDecl _ _ _ _) = do
           printFD4 ("Chequeando tipos de "++f)
           td <- typecheckDecl d
           addDecl td
-          -- opt <- getOpt
-          -- td' <- if opt then optimize td else td
-          ppterm <- ppDecl td  --td'
+          opt <- getOpt
+          td' <- if opt then optimizeDecl td else return td
+          ppterm <- ppDecl td'
           printFD4 ppterm
           return Nothing
       Interactive -> run evalDecl d
@@ -186,7 +187,9 @@ handleDecl d@(SDDecl _ _ _ _) = do
       typecheckDecl _ = failFD4 "Typecheck: No es una declaracion"
       run :: MonadFD4 m => (Decl TTerm -> m (Decl TTerm)) -> SDecl -> m(Maybe (Decl TTerm))
       run f de = do 
-          td <- typecheckDecl de  -- td' <- if opt then optimizeDecl td else return td
+          td <- typecheckDecl de
+          opt <- getOpt
+          td' <- if opt then optimizeDecl td else return td
           ed <- f td
           addDecl ed
           return $ Just ed
