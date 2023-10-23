@@ -4,6 +4,9 @@ import Lang
 import MonadFD4 ( MonadFD4, lookupDecl, failFD4 )
 import Utils (semOp)
 
+constantPropagation :: MonadFD4 m => TTerm -> String -> TTerm -> m TTerm
+constantPropagation _ _ t = return t
+
 constantFolding :: MonadFD4 m => TTerm -> m TTerm
 constantFolding t@(V _ (Bound _)) = return t
 constantFolding t@(V _ (Free _)) = return t
@@ -17,11 +20,18 @@ constantFolding t@(Const _ (CNat _)) = return t
 constantFolding (Print p str t) = do 
                                     t' <- constantFolding t
                                     return (Print p str t')
+-- constantFolding convencional dejaria el If como esta, nosotros decidimos realizar la mejora de
+-- sparse conditional constant propagation. Si la condicion evalua a una constante, ya sabemos que 
+-- rama del Ifz es la que se va a ejecutar
 constantFolding (IfZ p c t1 t2) = do
                                     c'  <- constantFolding c
-                                    t1' <- constantFolding t1
-                                    t2' <- constantFolding t2
-                                    return (IfZ p c' t1' t2')
+                                    case c' of
+                                      Const _ (CNat 0) -> constantFolding t1
+                                      Const _ (CNat _) -> constantFolding t2
+                                      _                -> do 
+                                                            t1' <- constantFolding t1
+                                                            t2' <- constantFolding t2
+                                                            return (IfZ p c' t1' t2')
 constantFolding (Lam p v ty (Sc1 t)) = do
                                   t' <- constantFolding t
                                   return (Lam p v ty (Sc1 t'))
@@ -34,8 +44,11 @@ constantFolding (Fix p f fty x xty (Sc2 t)) = do
                                           return (Fix p f fty x xty (Sc2 t'))
 constantFolding (Let p v ty def (Sc1 t)) = do
                                       def' <- constantFolding def
-                                      t' <- constantFolding t
-                                      return (Let p v ty def' (Sc1 t'))
+                                      case def' of
+                                        (Const _ _) -> do t' <- constantPropagation def' v t
+                                                          constantFolding t'
+                                        _           -> do t' <- constantFolding t
+                                                          return (Let p v ty def' (Sc1 t'))
 constantFolding (BinaryOp p op t1 t2) = do t1' <- constantFolding t1
                                            t2' <- constantFolding t2
                                            bopFold op t1' t2'
