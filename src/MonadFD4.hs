@@ -30,6 +30,13 @@ module MonadFD4 (
   getInter,
   getMode,
   getOpt,
+  getProf,
+  addProfStep,
+  getProfMaxStack,
+  getProfClousureCount,
+  getProfStep,
+  addProfClousureCount,
+  checkProfMaxStack,
   eraseLastFileDecls,
   failPosFD4,
   failFD4,
@@ -72,6 +79,9 @@ class (MonadIO m, MonadState GlEnv m, MonadError Error m, MonadReader Conf m) =>
 getOpt :: MonadFD4 m => m Bool
 getOpt = asks opt
 
+getProf :: MonadFD4 m => m Bool
+getProf = asks prof
+
 getMode :: MonadFD4 m => m Mode
 getMode = asks modo
 
@@ -98,6 +108,30 @@ addDecl d = modify (\s -> s { glb = d : glb s, cantDecl = cantDecl s + 1 })
 
 addTy :: MonadFD4 m => (Name,Ty) -> m ()
 addTy nt = modify (\s -> s { glbTy = nt : glbTy s})
+
+addProfStep :: MonadFD4 m => m ()
+addProfStep = modify (\s -> s { profilerState = (\(a,b,c) -> (a+1,b,c)) (profilerState s)})
+
+checkProfMaxStack :: MonadFD4 m => Int -> m ()
+checkProfMaxStack size = modify (\s -> s { profilerState = (\(a,b,c) -> if b >= size then (a,b,c) else (a,size,c)) (profilerState s)})
+
+addProfClousureCount :: MonadFD4 m => m ()
+addProfClousureCount = modify (\s -> s { profilerState = (\(a,b,c) -> (a,b,c+1)) (profilerState s)})
+
+getProfStep :: MonadFD4 m => m Int
+getProfStep = do
+                s <- get
+                return $ (\(a,_,_) -> a) $ profilerState s 
+
+getProfClousureCount :: MonadFD4 m => m Int
+getProfClousureCount = do
+                          s <- get
+                          return $ (\(_,b,_) -> b) $ profilerState s 
+
+getProfMaxStack :: MonadFD4 m => m Int
+getProfMaxStack = do
+                s <- get
+                return $ (\(_,_,c) -> c) $ profilerState s 
 
 eraseLastFileDecls :: MonadFD4 m => m ()
 eraseLastFileDecls = do

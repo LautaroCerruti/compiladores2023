@@ -45,8 +45,8 @@ prompt :: String
 prompt = "FD4> "
 
 -- | Parser de banderas
-parseMode :: Parser (Mode,Bool)
-parseMode = (,) <$>
+parseMode :: Parser (Mode,Bool,Bool)
+parseMode = (, ,) <$>
       (flag' Typecheck ( long "typecheck" <> short 't' <> help "Chequear tipos e imprimir el término")
       <|> flag' InteractiveCEK (long "interactiveCEK" <> short 'k' <> help "Ejecutar interactivamente en la CEK")
       <|> flag' CEK (long "cek" <> short 'l' <> help "Ejecutar en la CEK")
@@ -59,13 +59,12 @@ parseMode = (,) <$>
   -- <|> flag' Assembler ( long "assembler" <> short 'a' <> help "Imprimir Assembler resultante")
   -- <|> flag' Build ( long "build" <> short 'b' <> help "Compilar")
       )
-   -- <*> pure False
-   -- reemplazar por la siguiente línea para habilitar opción
    <*> flag False True (long "optimize" <> short 'o' <> help "Optimizar código")
+   <*> flag False True (long "profile" <> short 'p' <> help "Muestra metricas sobre la ejecucion")
 
 -- | Parser de opciones general, consiste de un modo y una lista de archivos a procesar
-parseArgs :: Parser (Mode,Bool, [FilePath])
-parseArgs = (\(a,b) c -> (a,b,c)) <$> parseMode <*> many (argument str (metavar "FILES..."))
+parseArgs :: Parser (Mode, Bool, Bool, [FilePath])
+parseArgs = (\(a,b,c) d -> (a,b,c,d)) <$> parseMode <*> many (argument str (metavar "FILES..."))
 
 main :: IO ()
 main = execParser opts >>= go
@@ -75,15 +74,15 @@ main = execParser opts >>= go
      <> progDesc "Compilador de FD4"
      <> header "Compilador de FD4 de la materia Compiladores 2023" )
 
-    go :: (Mode,Bool,[FilePath]) -> IO ()
-    go (Interactive,opt,files) =
-              runOrFail (Conf opt Interactive) (runInputT defaultSettings (repl files))
-    go (InteractiveCEK,opt,files) =
-              runOrFail (Conf opt InteractiveCEK) (runInputT defaultSettings (repl files))
-    go (RunVM,opt,files) =
-              runOrFail (Conf opt RunVM) $ mapM_ runVM files
-    go (m,opt, files) =
-              runOrFail (Conf opt m) $ mapM_ compileFile files
+    go :: (Mode, Bool, Bool,[FilePath]) -> IO ()
+    go (Interactive,opt, prof,files) =
+              runOrFail (Conf opt prof Interactive) (runInputT defaultSettings (repl files))
+    go (InteractiveCEK,opt, prof,files) =
+              runOrFail (Conf opt prof InteractiveCEK) (runInputT defaultSettings (repl files))
+    go (RunVM,opt, prof,files) =
+              runOrFail (Conf opt prof RunVM) $ mapM_ runVM files
+    go (m,opt, prof, files) =
+              runOrFail (Conf opt prof m) $ mapM_ compileFile files
 
 runOrFail :: Conf -> FD4 a -> IO a
 runOrFail c m = do
@@ -138,6 +137,10 @@ compileFile f = do
                       liftIO $ bcWrite bc (dropExtension f ++ ".bc32")
       _ -> do 
             mapM_ handleDecl decls
+            p <- getProf
+            _ <- if p then do s <- getProfStep
+                              printFD4 $ "Cantidad de pasos CEK: " ++ (show s)
+                      else return ()
             setInter i
 
 runVM :: MonadFD4 m => FilePath -> m ()
@@ -155,9 +158,9 @@ evalDecl (Decl p x t e) = do
     e' <- eval e
     return (Decl p x t e')
 
-runCEKDecl :: MonadFD4 m => Decl TTerm -> m (Decl TTerm)
-runCEKDecl (Decl p x t e) = do 
-            e' <- runCEK e
+runCEKDecl :: MonadFD4 m => (m ()) -> Decl TTerm -> m (Decl TTerm)
+runCEKDecl fun (Decl p x t e) = do 
+            e' <- runCEK fun e
             return $ Decl p x t e'
 
 handleDecl ::  MonadFD4 m => SDecl -> m (Maybe (Decl TTerm))
@@ -176,8 +179,11 @@ handleDecl d@(SDDecl _ _ _ _) = do
           return Nothing
       Interactive -> run evalDecl d
       Eval -> run evalDecl d
-      InteractiveCEK -> run runCEKDecl d
-      CEK -> run runCEKDecl d
+      InteractiveCEK -> run (runCEKDecl (return ())) d
+      CEK -> do 
+                p <- getProf
+                fun <- if p then return addProfStep else return (return ())
+                run (runCEKDecl fun) d
       Bytecompile -> run return d
       _ -> failFD4 "No deberia llegar aca"
     where
@@ -190,7 +196,7 @@ handleDecl d@(SDDecl _ _ _ _) = do
           td <- typecheckDecl de
           opt <- getOpt
           td' <- if opt then optimizeDecl td else return td
-          ed <- f td
+          ed <- f td'
           addDecl ed
           return $ Just ed
 
@@ -293,7 +299,7 @@ handleTerm t = do
         tt <- tc t' (tyEnv s)
         m <- getMode
         case m of
-            InteractiveCEK -> run runCEK tt
+            InteractiveCEK -> run (runCEK (return ())) tt
             _ -> run eval tt
     where
       run :: MonadFD4 m => (TTerm -> m TTerm) -> TTerm -> m()

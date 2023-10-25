@@ -18,7 +18,11 @@ data GlEnv = GlEnv {
   lfile :: String,      -- ^ Último archivo cargado.
   cantDecl :: Int,      -- ^ Cantidad de declaraciones desde la última carga
   glb :: [Decl TTerm],  -- ^ Entorno con declaraciones globales
-  glbTy :: [(Name, Ty)] 
+  glbTy :: [(Name, Ty)], -- ^ Entorno con declaraciones de tipos
+  profilerState :: (Int, Int, Int) -- ^ Tupla con 3 ints para los datos de profiling
+                                   -- el primero corresponde con la cantidad de pasos (ya sea de la CEK o la vm)
+                                   -- el segundo al tamaño maximo del stack en la vm
+                                   -- el tercero a la cantidad de clausuras creadas en la vm
 }
 
 -- ^ Entorno de tipado de declaraciones globales
@@ -42,9 +46,10 @@ data Mode =
   -- | Build
 data Conf = Conf {
     opt :: Bool,          --  ^ True, si estan habilitadas las optimizaciones.
+    prof :: Bool,
     modo :: Mode
 }
 
 -- | Valor del estado inicial
 initialEnv :: GlEnv
-initialEnv = GlEnv False "" 0 [] []
+initialEnv = GlEnv False "" 0 [] [] (0, 0, 0)
