@@ -126,12 +126,12 @@ getProfStep = do
 getProfClousureCount :: MonadFD4 m => m Int
 getProfClousureCount = do
                           s <- get
-                          return $ (\(_,b,_) -> b) $ profilerState s 
+                          return $ (\(_,_,c) -> c) $ profilerState s 
 
 getProfMaxStack :: MonadFD4 m => m Int
 getProfMaxStack = do
                 s <- get
-                return $ (\(_,_,c) -> c) $ profilerState s 
+                return $ (\(_,b,_) -> b) $ profilerState s 
 
 eraseLastFileDecls :: MonadFD4 m => m ()
 eraseLastFileDecls = do

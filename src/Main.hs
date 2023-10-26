@@ -22,7 +22,7 @@ import Data.Char ( isSpace )
 import Control.Exception ( catch , IOException )
 import System.IO ( hPrint, stderr, hPutStrLn )
 import Data.Maybe ( fromMaybe, catMaybes )
-import Bytecompile (bytecompileModule, bcWrite, bcRead, runBC)
+import Bytecompile (bytecompileModule, bcWrite, bcRead, runBC, showBC)
 
 import System.Exit ( exitWith, ExitCode(ExitFailure) )
 import Options.Applicative
@@ -135,18 +135,34 @@ compileFile f = do
                       bc <- bytecompileModule (catMaybes declsF)
                       -- printFD4 $ showBC bc 
                       liftIO $ bcWrite bc (dropExtension f ++ ".bc32")
+      CEK -> do
+                mapM_ handleDecl decls
+                p <- getProf
+                _ <- if p then do s <- getProfStep
+                                  printFD4 $ "Cantidad de pasos CEK: " ++ (show s)
+                                        else return ()
+                setInter i
       _ -> do 
             mapM_ handleDecl decls
-            p <- getProf
-            _ <- if p then do s <- getProfStep
-                              printFD4 $ "Cantidad de pasos CEK: " ++ (show s)
-                      else return ()
             setInter i
 
 runVM :: MonadFD4 m => FilePath -> m ()
 runVM f = do
             bc <- liftIO $ bcRead f
-            runBC bc
+            p <- getProf
+            fun <- if p then return (\s -> do addProfStep
+                                              checkProfMaxStack s) 
+                        else return (\_ -> return ())
+            runBC fun bc
+            _ <- if p then do s <- getProfStep
+                              printFD4 $ "Cantidad de pasos VM: " ++ (show s)
+                              ss <- getProfMaxStack
+                              printFD4 $ "Tamaño maximo del stack: " ++ (show ss)
+                              c <- getProfClousureCount
+                              printFD4 $ "Cantidad de clausuras realizadas: " ++ (show c)
+                      else return ()
+            return ()
+
 
 parseIO ::  MonadFD4 m => String -> P a -> String -> m a
 parseIO filename p x = case runP p x filename of
