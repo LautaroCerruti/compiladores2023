@@ -75,18 +75,31 @@ main = execParser opts >>= go
      <> header "Compilador de FD4 de la materia Compiladores 2023" )
 
     go :: (Mode, Bool, Bool,[FilePath]) -> IO ()
-    go (Interactive,opt, prof,files) =
+    go (Interactive, opt, prof, files) =
               runOrFail (Conf opt prof Interactive) (runInputT defaultSettings (repl files))
-    go (InteractiveCEK,opt, prof,files) =
+    go (InteractiveCEK, opt, prof, files) =
               runOrFail (Conf opt prof InteractiveCEK) (runInputT defaultSettings (repl files))
-    go (RunVM,opt, prof,files) =
+    go (RunVM, opt, True, files) = 
+              runOrFailProf (Conf opt True RunVM) $ mapM_ runVM files
+    go (RunVM, opt, prof, files) =
               runOrFail (Conf opt prof RunVM) $ mapM_ runVM files
-    go (m,opt, prof, files) =
+    go (CEK, opt, True, files) =
+              runOrFailProf (Conf opt True CEK) $ mapM_ compileFile files
+    go (m, opt, prof, files) =
               runOrFail (Conf opt prof m) $ mapM_ compileFile files
 
 runOrFail :: Conf -> FD4 a -> IO a
 runOrFail c m = do
   r <- runFD4 m c
+  case r of
+    Left err -> do
+      liftIO $ hPrint stderr err
+      exitWith (ExitFailure 1)
+    Right v -> return v
+
+runOrFailProf :: Conf -> FD4Prof a -> IO a
+runOrFailProf c m = do
+  r <- runFD4Prof m c
   case r of
     Left err -> do
       liftIO $ hPrint stderr err
@@ -150,10 +163,7 @@ runVM :: MonadFD4 m => FilePath -> m ()
 runVM f = do
             bc <- liftIO $ bcRead f
             p <- getProf
-            fun <- if p then return (\s -> do addProfStep
-                                              checkProfMaxStack s) 
-                        else return (\_ -> return ())
-            runBC fun bc
+            runBC bc
             _ <- if p then do s <- getProfStep
                               printFD4 $ "Cantidad de pasos VM: " ++ (show s)
                               ss <- getProfMaxStack
@@ -174,9 +184,9 @@ evalDecl (Decl p x t e) = do
     e' <- eval e
     return (Decl p x t e')
 
-runCEKDecl :: MonadFD4 m => (m ()) -> Decl TTerm -> m (Decl TTerm)
-runCEKDecl fun (Decl p x t e) = do 
-            e' <- runCEK fun e
+runCEKDecl :: MonadFD4 m => Decl TTerm -> m (Decl TTerm)
+runCEKDecl (Decl p x t e) = do 
+            e' <- runCEK e
             return $ Decl p x t e'
 
 handleDecl ::  MonadFD4 m => SDecl -> m (Maybe (Decl TTerm))
@@ -195,11 +205,8 @@ handleDecl d@(SDDecl _ _ _ _) = do
           return Nothing
       Interactive -> run evalDecl d
       Eval -> run evalDecl d
-      InteractiveCEK -> run (runCEKDecl (return ())) d
-      CEK -> do 
-                p <- getProf
-                fun <- if p then return addProfStep else return (return ())
-                run (runCEKDecl fun) d
+      InteractiveCEK -> run runCEKDecl d
+      CEK -> run runCEKDecl d
       Bytecompile -> run return d
       _ -> failFD4 "No deberia llegar aca"
     where
@@ -315,7 +322,7 @@ handleTerm t = do
         tt <- tc t' (tyEnv s)
         m <- getMode
         case m of
-            InteractiveCEK -> run (runCEK (return ())) tt
+            InteractiveCEK -> run runCEK tt
             _ -> run eval tt
     where
       run :: MonadFD4 m => (TTerm -> m TTerm) -> TTerm -> m()

@@ -51,30 +51,63 @@ constantFolding (Let p v ty def (Sc1 t)) = do
                                                           constantFolding t'
                                         _           -> do t' <- constantFolding t
                                                           return (Let p v ty def' (Sc1 t'))
--- falta x + 4 - 3 y x + 4 + 3
-constantFolding (BinaryOp p op t1 t2) = do t1' <- constantFolding t1
-                                           t2' <- constantFolding t2
+constantFolding (BinaryOp p op tf ts) = do t1' <- constantFolding tf
+                                           t2' <- constantFolding ts
                                            bopFold op t1' t2'
           where bopFold :: MonadFD4 m => BinaryOp -> TTerm -> TTerm -> m TTerm
                 bopFold _ t (Const _ (CNat 0)) = return t
                 bopFold Add (Const _ (CNat 0)) t = return t
-                bopFold Sub c@(Const _ (CNat 0)) t = if hasEffects t then return (BinaryOp p op c t) else return c
+                bopFold Sub c@(Const _ (CNat 0)) t = do
+                                                        b <- hasEffects t
+                                                        if b then return (BinaryOp p op c t) else return c
                 bopFold _ (Const _ (CNat n1)) (Const _ (CNat n2)) = return $ Const p (CNat (semOp op n1 n2)) 
+                bopFold Add (BinaryOp p1 Add t1 t2) t3 = do
+                                                          t2b <- hasEffects t2
+                                                          t3b <- hasEffects t3
+                                                          if t2b || t3b 
+                                                            then return (BinaryOp p Add (BinaryOp p1 Add t1 t2) t3)
+                                                            else
+                                                              do t4 <- constantFolding (BinaryOp p Add t2 t3)
+                                                                 constantFolding (BinaryOp p Add t1 t4)
+                bopFold Sub (BinaryOp p1 Sub t1 t2) t3 = do
+                                                          t2b <- hasEffects t2
+                                                          t3b <- hasEffects t3
+                                                          if t2b || t3b 
+                                                            then return (BinaryOp p Sub (BinaryOp p1 Sub t1 t2) t3)
+                                                            else
+                                                              do t4 <- constantFolding (BinaryOp p Add t2 t3)
+                                                                 constantFolding (BinaryOp p Sub t1 t4)
                 bopFold _ t1' t2'  = return (BinaryOp p op t1' t2')
 
--- Esto podria estar monadizado y hacer que Global busque en el entorno y se fije si esa delcaracion tiene efectos
-hasEffects :: TTerm -> Bool
-hasEffects (V _ (Bound _)) = False
-hasEffects (V _ (Free _)) = False
-hasEffects (V _ (Global _)) = True
-hasEffects (Const _ _) = False
-hasEffects (Print _ str t) = True
-hasEffects (IfZ _ c t1 t2) = hasEffects c || hasEffects t1 || hasEffects t2
+hasEffects :: MonadFD4 m => TTerm -> m Bool
+hasEffects (V _ (Bound _)) = return False
+hasEffects (V _ (Free _)) = return False
+hasEffects (V _ (Global n)) = do 
+                                lt <- lookupDecl n
+                                case lt of
+                                  Nothing -> failFD4 "Variable no declarada"
+                                  Just t -> hasEffects t
+hasEffects (Const _ _) = return False
+hasEffects (Print _ str t) = return True
+hasEffects (IfZ _ c t1 t2) = do
+                                cb <- hasEffects c 
+                                t1b <- hasEffects t1 
+                                t2b <- hasEffects t2
+                                return (cb || t1b || t2b)
 hasEffects (Lam _ _ _ (Sc1 t)) = hasEffects t
-hasEffects (App _ t u) = hasEffects t || hasEffects u
-hasEffects (Fix _ _ _ _ _ (Sc2 t)) = True
-hasEffects (Let _ _ _ def (Sc1 t)) = hasEffects def || hasEffects t
-hasEffects (BinaryOp p op t1 t2) = hasEffects t1 || hasEffects t2
+hasEffects (App _ t u) = do
+                          tb <- hasEffects t 
+                          ub <- hasEffects u
+                          return (tb || ub)
+hasEffects (Fix _ _ _ _ _ (Sc2 t)) = return True
+hasEffects (Let _ _ _ def (Sc1 t)) = do
+                                        defb <- hasEffects def 
+                                        tb <- hasEffects t
+                                        return (defb || tb)
+hasEffects (BinaryOp p op t1 t2) = do 
+                                      t1b <- hasEffects t1 
+                                      t2b <- hasEffects t2
+                                      return (t1b || t2b)
 
 optimizeDecl :: MonadFD4 m  => Decl TTerm -> m (Decl TTerm)
 optimizeDecl (Decl p n ty t) = do 

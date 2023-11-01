@@ -3,4 +3,5 @@ P1) multibinders
 P3) Comparar ack 3 11 entre la macchina en haskell y C nativo
 P4) Crear una copia de la maquina en 8 bits con las mejoras de la plancha 4
 P4) punto 6, 7 y 8
-P5) hacer optimizaciones opcionales, en profiling revisar los tipos comentados de las funciones de CEK
+P5) hacer optimizaciones opcionales, agregar testing para profiling y para opt typecheck, 
+    tal vez mejorar fun tamaño del stack en profiling
