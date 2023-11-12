@@ -40,6 +40,7 @@ executable compiladores2023
         Subst
         TypeChecker
         CEK
+        Optimize
 
     ghc-options: 
         -threaded 

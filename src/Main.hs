@@ -22,7 +22,7 @@ import Data.Char ( isSpace )
 import Control.Exception ( catch , IOException )
 import System.IO ( hPrint, stderr, hPutStrLn )
 import Data.Maybe ( fromMaybe, catMaybes )
-import Bytecompile (bytecompileModule, bcWrite, bcRead, runBC)
+import Bytecompile (bytecompileModule, bcWrite, bcRead, runBC, showBC)
 
 import System.Exit ( exitWith, ExitCode(ExitFailure) )
 import Options.Applicative
@@ -37,6 +37,7 @@ import PPrint ( pp , ppTy, ppDecl )
 import MonadFD4
 import TypeChecker ( tc, tcDecl )
 import System.FilePath (dropExtension)
+import Optimize (optimizeDecl)
 
 import CEK ( runCEK )
 
@@ -44,8 +45,8 @@ prompt :: String
 prompt = "FD4> "
 
 -- | Parser de banderas
-parseMode :: Parser (Mode,Bool)
-parseMode = (,) <$>
+parseMode :: Parser (Mode,Bool,Bool)
+parseMode = (, ,) <$>
       (flag' Typecheck ( long "typecheck" <> short 't' <> help "Chequear tipos e imprimir el término")
       <|> flag' InteractiveCEK (long "interactiveCEK" <> short 'k' <> help "Ejecutar interactivamente en la CEK")
       <|> flag' CEK (long "cek" <> short 'l' <> help "Ejecutar en la CEK")
@@ -58,13 +59,12 @@ parseMode = (,) <$>
   -- <|> flag' Assembler ( long "assembler" <> short 'a' <> help "Imprimir Assembler resultante")
   -- <|> flag' Build ( long "build" <> short 'b' <> help "Compilar")
       )
-   <*> pure False
-   -- reemplazar por la siguiente línea para habilitar opción
-   -- <*> flag False True (long "optimize" <> short 'o' <> help "Optimizar código")
+   <*> flag False True (long "optimize" <> short 'o' <> help "Optimizar código")
+   <*> flag False True (long "profile" <> short 'p' <> help "Muestra metricas sobre la ejecucion")
 
 -- | Parser de opciones general, consiste de un modo y una lista de archivos a procesar
-parseArgs :: Parser (Mode,Bool, [FilePath])
-parseArgs = (\(a,b) c -> (a,b,c)) <$> parseMode <*> many (argument str (metavar "FILES..."))
+parseArgs :: Parser (Mode, Bool, Bool, [FilePath])
+parseArgs = (\(a,b,c) d -> (a,b,c,d)) <$> parseMode <*> many (argument str (metavar "FILES..."))
 
 main :: IO ()
 main = execParser opts >>= go
@@ -74,19 +74,32 @@ main = execParser opts >>= go
      <> progDesc "Compilador de FD4"
      <> header "Compilador de FD4 de la materia Compiladores 2023" )
 
-    go :: (Mode,Bool,[FilePath]) -> IO ()
-    go (Interactive,opt,files) =
-              runOrFail (Conf opt Interactive) (runInputT defaultSettings (repl files))
-    go (InteractiveCEK,opt,files) =
-              runOrFail (Conf opt InteractiveCEK) (runInputT defaultSettings (repl files))
-    go (RunVM,opt,files) =
-              runOrFail (Conf opt RunVM) $ mapM_ runVM files
-    go (m,opt, files) =
-              runOrFail (Conf opt m) $ mapM_ compileFile files
+    go :: (Mode, Bool, Bool,[FilePath]) -> IO ()
+    go (Interactive, opt, prof, files) =
+              runOrFail (Conf opt prof Interactive) (runInputT defaultSettings (repl files))
+    go (InteractiveCEK, opt, prof, files) =
+              runOrFail (Conf opt prof InteractiveCEK) (runInputT defaultSettings (repl files))
+    go (RunVM, opt, True, files) = 
+              runOrFailProf (Conf opt True RunVM) $ mapM_ runVM files
+    go (RunVM, opt, prof, files) =
+              runOrFail (Conf opt prof RunVM) $ mapM_ runVM files
+    go (CEK, opt, True, files) =
+              runOrFailProf (Conf opt True CEK) $ mapM_ compileFile files
+    go (m, opt, prof, files) =
+              runOrFail (Conf opt prof m) $ mapM_ compileFile files
 
 runOrFail :: Conf -> FD4 a -> IO a
 runOrFail c m = do
   r <- runFD4 m c
+  case r of
+    Left err -> do
+      liftIO $ hPrint stderr err
+      exitWith (ExitFailure 1)
+    Right v -> return v
+
+runOrFailProf :: Conf -> FD4Prof a -> IO a
+runOrFailProf c m = do
+  r <- runFD4Prof m c
   case r of
     Left err -> do
       liftIO $ hPrint stderr err
@@ -135,6 +148,13 @@ compileFile f = do
                       bc <- bytecompileModule (catMaybes declsF)
                       -- printFD4 $ showBC bc 
                       liftIO $ bcWrite bc (dropExtension f ++ ".bc32")
+      CEK -> do
+                mapM_ handleDecl decls
+                p <- getProf
+                _ <- if p then do s <- getProfStep
+                                  printFD4 $ "Cantidad de pasos CEK: " ++ (show s)
+                                        else return ()
+                setInter i
       _ -> do 
             mapM_ handleDecl decls
             setInter i
@@ -142,7 +162,17 @@ compileFile f = do
 runVM :: MonadFD4 m => FilePath -> m ()
 runVM f = do
             bc <- liftIO $ bcRead f
+            p <- getProf
             runBC bc
+            _ <- if p then do s <- getProfStep
+                              printFD4 $ "Cantidad de pasos VM: " ++ (show s)
+                              ss <- getProfMaxStack
+                              printFD4 $ "Tamaño maximo del stack: " ++ (show ss)
+                              c <- getProfClousureCount
+                              printFD4 $ "Cantidad de clausuras realizadas: " ++ (show c)
+                      else return ()
+            return ()
+
 
 parseIO ::  MonadFD4 m => String -> P a -> String -> m a
 parseIO filename p x = case runP p x filename of
@@ -168,9 +198,9 @@ handleDecl d@(SDDecl _ _ _ _) = do
           printFD4 ("Chequeando tipos de "++f)
           td <- typecheckDecl d
           addDecl td
-          -- opt <- getOpt
-          -- td' <- if opt then optimize td else td
-          ppterm <- ppDecl td  --td'
+          opt <- getOpt
+          td' <- if opt then optimizeDecl td else return td
+          ppterm <- ppDecl td'
           printFD4 ppterm
           return Nothing
       Interactive -> run evalDecl d
@@ -186,8 +216,10 @@ handleDecl d@(SDDecl _ _ _ _) = do
       typecheckDecl _ = failFD4 "Typecheck: No es una declaracion"
       run :: MonadFD4 m => (Decl TTerm -> m (Decl TTerm)) -> SDecl -> m(Maybe (Decl TTerm))
       run f de = do 
-          td <- typecheckDecl de  -- td' <- if opt then optimizeDecl td else return td
-          ed <- f td
+          td <- typecheckDecl de
+          opt <- getOpt
+          td' <- if opt then optimizeDecl td else return td
+          ed <- f td'
           addDecl ed
           return $ Just ed
 

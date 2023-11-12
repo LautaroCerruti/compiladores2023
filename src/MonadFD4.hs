@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use <$>" #-}
@@ -18,7 +19,9 @@ y la mónada 'FD4' que provee una instancia de esta clase.
 
 module MonadFD4 (
   FD4,
+  FD4Prof,
   runFD4,
+  runFD4Prof,
   lookupDecl,
   lookupTy,
   lookupNameTy,
@@ -30,6 +33,13 @@ module MonadFD4 (
   getInter,
   getMode,
   getOpt,
+  getProf,
+  addStep,
+  getProfMaxStack,
+  getProfClousureCount,
+  getProfStep,
+  addClousureCount,
+  checkMaxStack,
   eraseLastFileDecls,
   failPosFD4,
   failFD4,
@@ -68,9 +78,15 @@ y otras operaciones derivadas de ellas, como por ejemplo
    - @gets :: (GlEnv -> a) -> m a@  
 -}
 class (MonadIO m, MonadState GlEnv m, MonadError Error m, MonadReader Conf m) => MonadFD4 m where
+  addStep :: m ()
+  checkMaxStack :: [a] -> m ()
+  addClousureCount :: m ()
 
 getOpt :: MonadFD4 m => m Bool
 getOpt = asks opt
+
+getProf :: MonadFD4 m => m Bool
+getProf = asks prof
 
 getMode :: MonadFD4 m => m Mode
 getMode = asks modo
@@ -98,6 +114,21 @@ addDecl d = modify (\s -> s { glb = d : glb s, cantDecl = cantDecl s + 1 })
 
 addTy :: MonadFD4 m => (Name,Ty) -> m ()
 addTy nt = modify (\s -> s { glbTy = nt : glbTy s})
+
+getProfStep :: MonadFD4 m => m Int
+getProfStep = do
+                s <- get
+                return $ (\(a,_,_) -> a) $ profilerState s 
+
+getProfClousureCount :: MonadFD4 m => m Int
+getProfClousureCount = do
+                          s <- get
+                          return $ (\(_,_,c) -> c) $ profilerState s 
+
+getProfMaxStack :: MonadFD4 m => m Int
+getProfMaxStack = do
+                s <- get
+                return $ (\(_,b,_) -> b) $ profilerState s 
 
 eraseLastFileDecls :: MonadFD4 m => m ()
 eraseLastFileDecls = do
@@ -148,12 +179,32 @@ catchErrors c = catchError (Just <$> c)
 -- El transformador de mónadas @StateT GlEnv@ agrega la mónada @ExcepT Error IO@ la posibilidad de manejar un estado de tipo 'Global.GlEnv'.
 type FD4 = ReaderT Conf (StateT GlEnv (ExceptT Error IO))
 
--- | Esta es una instancia vacía, ya que 'MonadFD4' no tiene funciones miembro.
-instance MonadFD4 FD4
+-- https://ghc.gitlab.haskell.org/ghc/doc/users_guide/exts/newtype_deriving.html
+newtype FD4Prof a = FD4Prof {r :: FD4 a}
+  deriving (Functor, Applicative, Monad, MonadIO, MonadState GlEnv, MonadError Error, MonadReader Conf)
+
+--type FD4Prof = ReaderT Conf (StateT GlEnv (ExceptT Error IO))
+
+instance MonadFD4 FD4 where
+  addStep = return ()
+  checkMaxStack l = return ()
+  addClousureCount = return ()
+
+instance MonadFD4 FD4Prof where
+  addStep = modify (\s -> s { profilerState = (\(a,b,c) -> (a+1,b,c)) (profilerState s)})
+  checkMaxStack l = modify (\s -> s { profilerState = (\(a,b,c) -> if b >= size then (a,b,c) else (a,size,c)) (profilerState s)})
+                    where size = length l
+  addClousureCount = modify (\s -> s { profilerState = (\(a,b,c) -> (a,b,c+1)) (profilerState s)})
 
 -- 'runFD4\'' corre una computación de la mónad 'FD4' en el estado inicial 'Global.initialEnv' 
 runFD4' :: FD4 a -> Conf -> IO (Either Error (a, GlEnv))
 runFD4' c conf =  runExceptT $ runStateT (runReaderT c conf)  initialEnv
 
-runFD4:: FD4 a -> Conf -> IO (Either Error a)
+runFD4 :: FD4 a -> Conf -> IO (Either Error a)
 runFD4 c conf = fmap fst <$> runFD4' c conf
+
+-- runFD4Prof' :: FD4Prof a -> Conf -> IO (Either Error (a, GlEnv))
+-- runFD4Prof' c conf =  runExceptT $ runStateT (runReaderT c conf)  initialEnv
+
+runFD4Prof :: FD4Prof a -> Conf -> IO (Either Error a)
+runFD4Prof c = runFD4 (r c)
