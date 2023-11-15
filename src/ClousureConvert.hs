@@ -42,7 +42,7 @@ closureConvert (Lam (_, tyf) n ty s@(Sc1 t)) = do
                             let fvars = freeVarsT t
                                 codef = IrFun name (tyToIrTy tyf) [(clos, IrClo), (n, tyToIrTy ty)] (letify clos fvars 1 body)
                             tell [codef]
-                            return $ MkClosure clos (fvars2Ir fvars)
+                            return $ MkClosure name (fvars2Ir fvars)
                             
 
 
