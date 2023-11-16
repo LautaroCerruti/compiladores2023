@@ -41,6 +41,9 @@ import Optimize (optimizeDecl)
 
 import CEK ( runCEK )
 
+import ClosureConvert (runCC)
+import C (ir2C)
+
 prompt :: String
 prompt = "FD4> "
 
@@ -54,7 +57,7 @@ parseMode = (, ,) <$>
       <|> flag' RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
       <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
       <|> flag Eval        Eval        (long "eval" <> short 'e' <> help "Evaluar programa")
-  -- <|> flag' CC ( long "cc" <> short 'c' <> help "Compilar a código C")
+      <|> flag' CC (long "cc" <> short 'c' <> help "Compilar a código C")
   -- <|> flag' Canon ( long "canon" <> short 'n' <> help "Imprimir canonicalización")
   -- <|> flag' Assembler ( long "assembler" <> short 'a' <> help "Imprimir Assembler resultante")
   -- <|> flag' Build ( long "build" <> short 'b' <> help "Compilar")
@@ -155,6 +158,12 @@ compileFile f = do
                                   printFD4 $ "Cantidad de pasos CEK: " ++ (show s)
                                         else return ()
                 setInter i
+      CC -> do
+              declsF <- mapM handleDecl decls
+              irs <- return (runCC (catMaybes declsF))
+              ccode <- return (ir2C irs)
+              --printFD4 ccode
+              liftIO $ writeFile (dropExtension f ++ ".c") ccode
       _ -> do 
             mapM_ handleDecl decls
             setInter i
@@ -208,6 +217,7 @@ handleDecl d@(SDDecl _ _ _ _) = do
       InteractiveCEK -> run runCEKDecl d
       CEK -> run runCEKDecl d
       Bytecompile -> run return d
+      CC -> run return d
       _ -> failFD4 "No deberia llegar aca"
     where
       typecheckDecl :: MonadFD4 m => SDecl -> m (Decl TTerm)

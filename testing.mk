@@ -11,6 +11,7 @@ TESTS	:= $(shell find $(TESTDIRS) -name '*.fd4' -type f | sort)
 # la VM si cambió la VM, etc).
 EXE	:= $(shell cabal exec whereis compiladores2023 | awk '{print $$2};')
 VM	:= ./vm/macc
+#CC := gcc runtime.c -lgc -o
 
 EXTRAFLAGS	:= 
 # EXTRAFLAGS	+= --optimize
@@ -23,6 +24,7 @@ CHECK	+= $(patsubst %,%.check_bc32_h,$(TESTS))
 CHECK	+= $(patsubst %,%.check_bc32,$(TESTS))
 CHECK	+= $(patsubst %,%.check_eval_opt,$(TESTS))
 # CHECK	+= $(patsubst %,%.check_opt,$(TESTS))
+CHECK	+= $(patsubst %,%.check_c,$(TESTS))
 
 # Ejemplo: así se puede apagar un test en particular.
 # CHECK	:= $(filter-out tests/correctos/grande.fd4.check_bc32,$(CHECK))
@@ -129,14 +131,33 @@ accept: $(patsubst %,%.accept,$(TESTS))
 	$(Q)touch $@
 	@echo "OK	EVALOPT	$(patsubst %.out,%,$<)"
 
+# C. Primero la regla para generar el codigo C, no se chequea nada.
+%.c: %.fd4 $(EXE)
+	$(Q)$(EXE) $(EXTRAFLAGS) --cc $< >/dev/null
+
+%.exe: %.c 
+	$(Q)$(CC) $< runtime.c -lgc -o $@
+
+# Correr bytecode para generar la salida (con VM en C).
+# Finalmente la comparación.
+%.fd4.actual_out_c: %.exe
+	$(Q)./$< > $@
+
+%.check_c: %.out %.actual_out_c
+	$(Q)diff -u $^
+	$(Q)touch $@
+	@echo "OK	CC	$(patsubst %.out,%,$<)"
+
 # Estas directivas indican que NO se borren los archivos intermedios,
 # así podemos examinarlos, particularmente cuando algo no anda.
 .SECONDARY: $(patsubst %,%.actual_out_eval,$(TESTS))
 .SECONDARY: $(patsubst %,%.actual_out_cek,$(TESTS))
+.SECONDARY: $(patsubst %,%.actual_out_c,$(TESTS))
 .SECONDARY: $(patsubst %,%.actual_out_bc32,$(TESTS))
 .SECONDARY: $(patsubst %,%.actual_out_bc32_h,$(TESTS))
 .SECONDARY: $(patsubst %,%.actual_out_eval_opt,$(TESTS))
 .SECONDARY: $(patsubst %,%.actual_opt_out,$(TESTS))
 .SECONDARY: $(patsubst %.fd4,%.bc32,$(TESTS))
+.SECONDARY: $(patsubst %.fd4,%.c,$(TESTS))
 
 .PHONY: test_all accept
