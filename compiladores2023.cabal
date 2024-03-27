@@ -43,6 +43,7 @@ executable compiladores2023
         CEK
         Optimize
         Utils
+        ClosureConvert
 
     ghc-options: 
         -threaded 
