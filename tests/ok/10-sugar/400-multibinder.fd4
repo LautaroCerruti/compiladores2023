@@ -1,0 +1,17 @@
+let a : Nat = print "ares=" ((fun (x y z : Nat) -> x + y + z) 1 2 3)
+
+let b : Nat = ((fun (x: Nat) -> x) 1)
+
+let c : Nat = ((fun (f : Nat -> Nat) (x y : Nat) -> x+y) (fun (x : Nat) -> x) 1 2)
+
+let daux : Nat->Nat->Nat = fix (f:Nat->Nat->Nat)(x1 x2:Nat)->ifz (x1-x2) then 0 else f (x1) (x2+1)
+
+let d : Nat = print "dres=" (daux 5 4)
+
+let eaux(x1 x2:Nat):Nat = ifz (x1-x2) then 0 else print "dif " (x1-x2)
+
+let e : Nat = eaux 5 1
+
+let rec faux(x1 x2:Nat):Nat = ifz (x1-x2) then 0 else print "dif " (faux (x1) (x2+1))
+
+let f : Nat = faux 5 1

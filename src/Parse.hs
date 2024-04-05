@@ -35,9 +35,9 @@ lexer = Tok.makeTokenParser langDef
 langDef :: LanguageDef u
 langDef = emptyDef {
          commentLine    = "#",
-         reservedNames = ["let", "rec","fun", "fix", "then", "else","in",
-                           "ifz", "print","Nat","type"],
-         reservedOpNames = ["->",":","=","+","-"]
+         reservedNames = ["let", "rec", "fun", "fix", "then", "else", "in",
+                           "ifz", "print", "Nat", "type"],
+         reservedOpNames = ["->", ":", "=", "+", "-"]
         }
 
 whiteSpace :: P ()
@@ -129,13 +129,20 @@ binding = do v <- var
              ty <- typeP
              return (v, ty)
 
+-- parsea una lista de pares (v1 v2 v3 : tipo)
+multibinding :: P [(Name, STy)]
+multibinding = do vars <- many1 var
+                  reservedOp ":"
+                  ty <- typeP
+                  return $ map (\v -> (v, ty)) vars
+
 lam :: P STerm
 lam = do i <- getPos
          reserved "fun"
-         binders <- many1 (parens binding)
+         binders <- many1 (parens multibinding)
          reservedOp "->"
          t <- expr
-         return (SLam i binders t)
+         return (SLam i (concat binders) t)
 
 -- Nota el parser app también parsea un solo atom.
 app :: P STerm
@@ -158,17 +165,17 @@ fix :: P STerm
 fix = do i <- getPos
          reserved "fix"
          (f, fty) <- parens binding
-         binders <- many (parens binding)
+         binders <- many (parens multibinding)
          reservedOp "->"
          t <- expr
-         return (SFix i (f,fty) binders t)
+         return (SFix i (f,fty) (concat binders) t)
 
 letbinders :: P [(Name, STy)]
 letbinders = do x <- var
-                binders <- many (parens binding)
+                binders <- many (parens multibinding)
                 reservedOp ":"
                 t <- typeP
-                return ((x,t) : binders)
+                return ((x,t) : (concat binders))
 
 letexp :: P STerm
 letexp = do
