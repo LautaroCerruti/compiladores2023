@@ -1,3 +1,22 @@
 let y : Nat = ifz 0 then 1 else 2
 
+type p = Nat -> Nat
+
 let z : Nat = print "asdadasdasd " y
+
+let a : Nat = (fun (x:Nat) -> (fun (y:Nat) -> (fun (z:Nat) -> (print "algo" z))))
+
+let a2 : Nat = print "algo"
+
+let b : Nat->Nat->Nat = fix (f:Nat->Nat->Nat)(x1:Nat) -> fun (x2:Nat) -> ifz (x1-x2) then 0 else f (x1) (x2+1)
+
+let b2 : Nat -> Nat -> Nat = fix (f : Nat -> Nat -> Nat) (x1 x2 : Nat) -> ifz x1 - x2 then 0 else f x1 (x2 + 1)
+
+let f : Nat = let f (x y z:Nat):Nat = x+z in print "x=" (f 1 2 3)
+let f' : Nat = let f' : Nat -> Nat -> Nat -> Nat = fun (x: Nat) -> fun (y : Nat) -> fun (z : Nat) -> x + z in print "x=" (f' 1 2 3)
+
+
+
+
+let letdecl (x:Nat) : Nat = x + 1
+let letdecl' : Nat -> Nat = fun (x : Nat) -> x + 1

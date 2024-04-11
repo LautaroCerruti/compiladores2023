@@ -33,7 +33,7 @@ import Lang
 import Parse ( P, tm, program, declOrTm, runP )
 import Elab ( elab, elabDecl, elabType )
 import Eval ( eval )
-import PPrint ( pp , ppTy, ppDecl )
+import PPrint ( pp , ppTy, ppDecl, ppSTy )
 import MonadFD4
 import TypeChecker ( tc, tcDecl )
 import System.FilePath (dropExtension)
@@ -164,6 +164,10 @@ compileFile f = do
               ccode <- return (ir2C irs)
               --printFD4 ccode
               liftIO $ writeFile (dropExtension f ++ ".c") ccode
+      Typecheck -> do 
+            printFD4 ("Chequeando tipos de "++f)
+            mapM_ handleDecl decls
+            setInter i
       _ -> do 
             mapM_ handleDecl decls
             setInter i
@@ -203,8 +207,6 @@ handleDecl d@(SDDecl _ _ _ _) = do
     m <- getMode
     case m of
       Typecheck -> do 
-          f <- getLastFile
-          printFD4 ("Chequeando tipos de "++f)
           td <- typecheckDecl d
           addDecl td
           opt <- getOpt
@@ -233,7 +235,15 @@ handleDecl d@(SDDecl _ _ _ _) = do
           addDecl ed
           return $ Just ed
 
-handleDecl t@(SDType _ _ _) = tyToGlb t
+handleDecl t@(SDType _ _ _) = do 
+                                m <- getMode
+                                case m of
+                                  Typecheck -> do 
+                                      tyToGlb t
+                                      ts <- ppSTy t
+                                      printFD4 ts
+                                      return Nothing
+                                  _ -> tyToGlb t
     where
       tyToGlb :: MonadFD4 m => SDecl -> m (Maybe (Decl TTerm))
       tyToGlb (SDType _ n sty) = do ty <- elabType sty

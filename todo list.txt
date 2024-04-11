@@ -1,7 +1,13 @@
-P1) Resugaring
-P1) multibinders
+P1) Resugar de terminos y de decls, printear las SDecl
 P3) Comparar ack 3 11 entre la macchina en haskell y C nativo
 P4) Crear una copia de la maquina en 8 bits con las mejoras de la plancha 4
 P4) punto 6, 7 y 8
 P5) hacer optimizaciones opcionales, agregar testing para profiling y para opt typecheck, 
     tal vez mejorar fun tamaño del stack en profiling
+
+    Revisar el caso de los funs y los apps con prints 
+        fun (x : Nat) -> (fun (y0 : Nat) -> (fun (z0 : Nat) -> print "algo" z0) y0) x
+        ==>
+        fun (x : Nat) (y0 : Nat) -> (fun (z0 : Nat) -> (print "algo") y0) x
+        ==>
+        fun (x : Nat) -> print "algo" x

@@ -28,9 +28,8 @@ elab' env (SV p v) =
   return $ if v `elem` env 
             then V p (Free v)
             else V p (Global v)
-
 elab' _ (SConst p c) = return $ Const p c
-
+-- Lam
 elab' env (SLam p [] _) = failPosFD4 p "Elab: Funcion sin Argumentos"
 elab' env (SLam p [(v,ty)] t) = do e <- elab' (v:env) t 
                                    ty' <- elabType ty 
@@ -38,18 +37,17 @@ elab' env (SLam p [(v,ty)] t) = do e <- elab' (v:env) t
 elab' env (SLam p ((v,ty):vs) t) = do e <- elab' (v:env) (SLam p vs t) 
                                       ty' <- elabType ty 
                                       return $ Lam p v ty' (close v e)
-             
+-- Fix
 elab' env (SFix p (f,fty) [] _) = failPosFD4 p "Elab: Fix sin Argumentos"
 elab' env (SFix p (f,fty) [(x,xty)] t) = do e <- elab' (x:f:env) t
                                             fty' <- elabType fty 
                                             xty' <- elabType xty 
                                             return $ Fix p f fty' x xty' (close2 f x e)
-   
 elab' env (SFix p (f,fty) ((x,xty):xs) t) = do e <- elab' (x:f:env) (SLam p xs t)
                                                fty' <- elabType fty 
                                                xty' <- elabType xty 
                                                return $ Fix p f fty' x xty' (close2 f x e)
-
+-- Ifz
 elab' env (SIfZ p c t e) = do c' <- elab' env c
                               t' <- elab' env t
                               e' <- elab' env e 
@@ -66,8 +64,7 @@ elab' env (SPrint i str Nothing) = return $ Lam i "x" (NatTy Nothing) (close "x"
 elab' env (SApp p h a) = do h' <- elab' env h
                             a' <- elab' env a
                             return $ App p h' a'
-
-
+-- Let no rec
 elab' env (SLet p _ [] _ _) = failPosFD4 p "Elab: Let sin Argumentos" -- No deberia ocurrir
 elab' env (SLet p False [(v,vty)] def body) = do d <- elab' env def
                                                  b <- elab' (v:env) body
@@ -77,7 +74,7 @@ elab' env (SLet p False ((f,fty):vs) def body) = do b <- elab' (f:env) body
                                                     d <- elab' env (SLam p vs def)
                                                     fty' <- elabType (getLetTy fty vs)
                                                     return $ Let p f fty' d (close f b)
-
+-- Let rec
 elab' env (SLet p True [(f,fty)] def body) = failPosFD4 p "Elab: Let Rec sin Argumentos"
 elab' env (SLet p True [(f,fty),(v,vty)] def body) = do b <- elab' (f:env) body
                                                         d <- elab' env (SFix p (f,(getLetTy fty [(v,vty)])) [(v,vty)] def)
@@ -101,7 +98,6 @@ elabType (STypeN name) = do x <- lookupNameTy name
                             
 
 elabDecl :: MonadFD4 m => SDecl -> m (Decl Term)
--- elabDecl (SDType p n st) = 
 elabDecl (SDDecl p _ [] _) = failPosFD4 p "Elab: Def sin Argumentos" -- No deberia ocurrir
 elabDecl (SDDecl p False [(x,xty)] t) = do t' <- elab t 
                                            xty' <- elabType xty

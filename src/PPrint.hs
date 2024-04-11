@@ -13,6 +13,7 @@ Stability   : experimental
 module PPrint (
     pp,
     ppTy,
+    ppSTy,
     ppName,
     ppDecl
     ) where
@@ -32,10 +33,12 @@ import Prettyprinter
       nest,
       sep,
       parens,
+      emptyDoc,
       Doc,
       Pretty(pretty) )
-import MonadFD4 ( gets, MonadFD4 )
+import MonadFD4 ( gets, failFD4, MonadFD4 )
 import Global ( GlEnv(glb) )
+import Data.List
 
 freshen :: [Name] -> Name -> Name
 freshen ns n = let cands = n : map (\i -> n ++ show i) [0..] 
@@ -135,10 +138,18 @@ t2doc :: Bool     -- Debe ser un átomo?
 {- t2doc at x = text (show x) -}
 t2doc at (SV _ x) = name2doc x
 t2doc at (SConst _ c) = c2doc c
+
+-- Borrar SLam si andan los multibinders
 t2doc at (SLam _ [(v,ty)] t) =
   parenIf at $
   sep [sep [ keywordColor (pretty "fun")
            , binding2doc (v,ty)
+           , opColor(pretty "->")]
+      , nest 2 (t2doc False t)]
+t2doc at (SLam _ xs t) =
+  parenIf at $
+  sep [sep [ keywordColor (pretty "fun")
+           , multibinding2doc xs
            , opColor(pretty "->")]
       , nest 2 (t2doc False t)]
 
@@ -147,6 +158,7 @@ t2doc at t@(SApp _ _ _) =
   parenIf at $
   t2doc True h <+> sep (map (t2doc True) ts)
 
+-- borrar si anda el multibinding
 t2doc at (SFix _ (f,fty) [(x,xty)] m) =
   parenIf at $
   sep [ sep [keywordColor (pretty "fix")
@@ -155,6 +167,15 @@ t2doc at (SFix _ (f,fty) [(x,xty)] m) =
                   , opColor (pretty "->") ]
       , nest 2 (t2doc False m)
       ]
+t2doc at (SFix _ (f,fty) xs m) =
+  parenIf at $
+  sep [ sep [keywordColor (pretty "fix")
+                  , binding2doc (f, fty)
+                  , multibinding2doc xs
+                  , opColor (pretty "->") ]
+      , nest 2 (t2doc False m)
+      ]
+
 t2doc at (SIfZ _ c t e) =
   parenIf at $
   sep [keywordColor (pretty "ifz"), nest 2 (t2doc False c)
@@ -164,27 +185,50 @@ t2doc at (SIfZ _ c t e) =
 t2doc at (SPrint _ str (Just t)) =
   parenIf at $
   sep [keywordColor (pretty "print"), pretty (show str), t2doc True t]
+t2doc at (SPrint _ str Nothing) =
+  parenIf at $
+  sep [keywordColor (pretty "print"), pretty (show str)]
 
-t2doc at (SLet _ False [(v,ty)] t t') =
+t2doc at (SLet _ _ [] _ _) = error "let sin parametros" -- no deberia ocurrir
+t2doc at (SLet _ isRec [(v,ty)] t t') =
   parenIf at $
   sep [
     sep [keywordColor (pretty "let")
+       , if isRec then keywordColor (pretty "rec") else emptyDoc
        , binding2doc (v,ty)
+       , opColor (pretty "=")]
+  , nest 2 (t2doc False t)
+  , keywordColor (pretty "in")
+  , nest 2 (t2doc False t') ]
+t2doc at (SLet _ isRec ((v, ty):xs) t t') =
+  parenIf at $
+  sep [
+    sep [keywordColor (pretty "let")
+       , if isRec then keywordColor (pretty "rec") else emptyDoc
+       , name2doc v
+       , multibinding2doc xs
+       , pretty ":"
+       , ty2doc ty
        , opColor (pretty "=") ]
   , nest 2 (t2doc False t)
   , keywordColor (pretty "in")
   , nest 2 (t2doc False t') ]
-t2doc at (SLet _ True [(v,ty)] t t') = error "a implementar"
 
 t2doc at (SBinaryOp _ o a b) =
   parenIf at $
   t2doc True a <+> binary2doc o <+> t2doc True b
 
-t2doc at _ = error "a implementar"
-
 binding2doc :: (Name, STy) -> Doc AnsiStyle
 binding2doc (x, ty) =
   parens (sep [name2doc x, pretty ":", ty2doc ty])
+
+multibinding2doc :: [(Name, STy)] -> Doc AnsiStyle
+multibinding2doc xs = 
+  let 
+    grouped = groupBy (\a b -> snd a == snd b) xs 
+    aux = map (\x -> (map fst x, snd (head x))) grouped
+  in
+  sep (map (\a -> parens (sep (map name2doc (fst a) ++ [pretty ":", ty2doc (snd a)]))) aux)
 
 -- | Pretty printing de términos (String)
 pp :: MonadFD4 m => TTerm -> m String
@@ -199,11 +243,47 @@ render = unpack . renderStrict . layoutSmart defaultLayoutOptions
 
 -- | Pretty printing de declaraciones
 ppDecl :: MonadFD4 m => Decl TTerm -> m String
-ppDecl (Decl p x _ t) = do 
+ppDecl (Decl p x ty t) = do 
   gdecl <- gets glb
-  return (render $ sep [defColor (pretty "let")
-                       , name2doc x 
-                       , defColor (pretty "=")] 
-                   <+> nest 2 (t2doc False (openAll fst (map declName gdecl) t)))
+  let sdecl = resugarDecl (SDDecl p False [(x, toSType ty)] (resugarT (openAll fst (map declName gdecl) t))) in
+    return (render $ sep [defColor (pretty "let")
+                        , name2doc x 
+                        , pretty ":"
+                        , ty2doc (toSType ty)
+                        , defColor (pretty "=")] 
+                    <+> nest 2 (t2doc False (resugarT (openAll fst (map declName gdecl) t))))
                          
+resugarT :: STerm -> STerm
+-- SLam
+resugarT t@(SLam il xs (SPrint i str (Just (SV _ v)))) = if v == (fst $ last xs) 
+                                                          then 
+                                                            case xs of 
+                                                              [_] -> SPrint i str Nothing
+                                                              _ -> SLam il (init xs) (SPrint i str Nothing) 
+                                                          else t
+resugarT (SLam i xs (SLam _ ys t)) = resugarT $ (SLam i (xs ++ ys) t)
+resugarT (SLam i xs t) = SLam i xs (resugarT t)
+-- SFix
+resugarT (SFix i f xs (SLam _ ys t)) = resugarT $ (SFix i f (xs ++ ys) t)
+resugarT (SFix i f xs t) = SFix i f xs (resugarT t)
+-- SLet
+resugarT (SLet i False ((f, SFunTy _ ty):xs) (SLam _ ys t1) t2) = 
+  resugarT $ (SLet i False ((f, ty):(xs ++ ys)) t1 t2)
+resugarT (SLet i False xs t1 t2) = SLet i False xs (resugarT t1) (resugarT t2)
+-- Falta let rec
+-- Others
+resugarT (SApp i t1 t2) = SApp i (resugarT t1) (resugarT t2)
+resugarT (SPrint i str (Just t)) = SPrint i str (Just $ resugarT t)
+resugarT (SBinaryOp i bo t1 t2) = SBinaryOp i bo (resugarT t1) (resugarT t2)
+resugarT (SIfZ i b t1 t2) = SIfZ i (resugarT b) (resugarT t1) (resugarT t2)
+resugarT t = t
 
+resugarDecl :: SDecl -> SDecl
+resugarDecl d = d
+
+ppSTy :: MonadFD4 m => SDecl -> m String
+ppSTy (SDType p n t) = return (render $ sep [defColor (pretty "type")
+                        , name2doc n
+                        , defColor (pretty "=") 
+                        , ty2doc t])
+ppSTy _ = failFD4 "No deberia llegar aca"
