@@ -1,4 +1,3 @@
-P1) Resugar de terminos y de decls, printear las SDecl
 P3) Comparar ack 3 11 entre la macchina en haskell y C nativo
 P4) Crear una copia de la maquina en 8 bits con las mejoras de la plancha 4
 P4) punto 6, 7 y 8
@@ -11,3 +10,5 @@ P5) hacer optimizaciones opcionales, agregar testing para profiling y para opt t
         fun (x : Nat) (y0 : Nat) -> (fun (z0 : Nat) -> (print "algo") y0) x
         ==>
         fun (x : Nat) -> print "algo" x
+
+Arreglar los tests, crear nuevos, etc

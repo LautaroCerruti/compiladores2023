@@ -139,13 +139,6 @@ t2doc :: Bool     -- Debe ser un átomo?
 t2doc at (SV _ x) = name2doc x
 t2doc at (SConst _ c) = c2doc c
 
--- Borrar SLam si andan los multibinders
-t2doc at (SLam _ [(v,ty)] t) =
-  parenIf at $
-  sep [sep [ keywordColor (pretty "fun")
-           , binding2doc (v,ty)
-           , opColor(pretty "->")]
-      , nest 2 (t2doc False t)]
 t2doc at (SLam _ xs t) =
   parenIf at $
   sep [sep [ keywordColor (pretty "fun")
@@ -158,15 +151,6 @@ t2doc at t@(SApp _ _ _) =
   parenIf at $
   t2doc True h <+> sep (map (t2doc True) ts)
 
--- borrar si anda el multibinding
-t2doc at (SFix _ (f,fty) [(x,xty)] m) =
-  parenIf at $
-  sep [ sep [keywordColor (pretty "fix")
-                  , binding2doc (f, fty)
-                  , binding2doc (x, xty)
-                  , opColor (pretty "->") ]
-      , nest 2 (t2doc False m)
-      ]
 t2doc at (SFix _ (f,fty) xs m) =
   parenIf at $
   sep [ sep [keywordColor (pretty "fix")
@@ -245,14 +229,25 @@ render = unpack . renderStrict . layoutSmart defaultLayoutOptions
 ppDecl :: MonadFD4 m => Decl TTerm -> m String
 ppDecl (Decl p x ty t) = do 
   gdecl <- gets glb
-  let sdecl = resugarDecl (SDDecl p False [(x, toSType ty)] (resugarT (openAll fst (map declName gdecl) t))) in
-    return (render $ sep [defColor (pretty "let")
-                        , name2doc x 
+  let SDDecl _ isRec sargs sterm = resugarDecl (SDDecl p False [(x, toSType ty)] (resugarT (openAll fst (filter ((/=) x) (map declName gdecl)) t))) in
+    case sargs of
+      [(f, fty)] -> return (render $ sep [defColor (pretty "let")
+                        , if isRec then keywordColor (pretty "rec") else emptyDoc
+                        , name2doc f 
                         , pretty ":"
-                        , ty2doc (toSType ty)
+                        , ty2doc fty
                         , defColor (pretty "=")] 
-                    <+> nest 2 (t2doc False (resugarT (openAll fst (map declName gdecl) t))))
-                         
+                    <+> nest 2 (t2doc False sterm))
+      ((f, fty):xs) -> return (render $ sep [defColor (pretty "let")
+                        , if isRec then keywordColor (pretty "rec") else emptyDoc
+                        , name2doc f 
+                        , multibinding2doc xs
+                        , pretty ":"
+                        , ty2doc fty
+                        , defColor (pretty "=")] 
+                    <+> nest 2 (t2doc False sterm))
+      _ -> failFD4 "Decl without name"
+                  
 resugarT :: STerm -> STerm
 -- SLam
 resugarT t@(SLam il xs (SPrint i str (Just (SV _ v)))) = if v == (fst $ last xs) 
@@ -261,16 +256,17 @@ resugarT t@(SLam il xs (SPrint i str (Just (SV _ v)))) = if v == (fst $ last xs)
                                                               [_] -> SPrint i str Nothing
                                                               _ -> SLam il (init xs) (SPrint i str Nothing) 
                                                           else t
-resugarT (SLam i xs (SLam _ ys t)) = resugarT $ (SLam i (xs ++ ys) t)
+resugarT (SLam i xs (SLam _ ys t)) = resugarT $ SLam i (xs ++ ys) t
 resugarT (SLam i xs t) = SLam i xs (resugarT t)
 -- SFix
-resugarT (SFix i f xs (SLam _ ys t)) = resugarT $ (SFix i f (xs ++ ys) t)
+resugarT (SFix i f xs (SLam _ ys t)) = resugarT $ SFix i f (xs ++ ys) t
 resugarT (SFix i f xs t) = SFix i f xs (resugarT t)
 -- SLet
-resugarT (SLet i False ((f, SFunTy _ ty):xs) (SLam _ ys t1) t2) = 
-  resugarT $ (SLet i False ((f, ty):(xs ++ ys)) t1 t2)
-resugarT (SLet i False xs t1 t2) = SLet i False xs (resugarT t1) (resugarT t2)
--- Falta let rec
+resugarT (SLet i False [(f, SFunTy _ ty)] (SFix _ _ xs t1) t2) =
+  resugarT $ SLet i True ((f, ty):xs) t1 t2
+resugarT (SLet i b ((f, SFunTy _ ty):xs) (SLam _ ys t1) t2) = 
+  resugarT $ SLet i b ((f, ty):(xs ++ ys)) t1 t2
+resugarT (SLet i b xs t1 t2) = SLet i b xs (resugarT t1) (resugarT t2)
 -- Others
 resugarT (SApp i t1 t2) = SApp i (resugarT t1) (resugarT t2)
 resugarT (SPrint i str (Just t)) = SPrint i str (Just $ resugarT t)
@@ -279,7 +275,15 @@ resugarT (SIfZ i b t1 t2) = SIfZ i (resugarT b) (resugarT t1) (resugarT t2)
 resugarT t = t
 
 resugarDecl :: SDecl -> SDecl
+resugarDecl (SDType _ _ _) = error "Declaracion de tipos no puede ser azucarada"
+resugarDecl (SDDecl i b [(f, fty)] (SLam _ ys t1)) = SDDecl i b ((f, removeNTypes (length ys) fty):ys) t1
+resugarDecl d@(SDDecl i False [(f, fty)] (SFix _ (fr, _) ys t1)) = if f == fr then SDDecl i True ((f, removeNTypes (length ys) fty):ys) t1 else d
 resugarDecl d = d
+
+removeNTypes :: Int -> STy -> STy
+removeNTypes 0 ty = ty
+removeNTypes n (SFunTy _ ty) = removeNTypes (n-1) ty
+removeNTypes _ _ = error "Error de tipos"
 
 ppSTy :: MonadFD4 m => SDecl -> m String
 ppSTy (SDType p n t) = return (render $ sep [defColor (pretty "type")
