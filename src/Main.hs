@@ -22,7 +22,7 @@ import Data.Char ( isSpace )
 import Control.Exception ( catch , IOException )
 import System.IO ( hPrint, stderr, hPutStrLn )
 import Data.Maybe ( fromMaybe, catMaybes )
-import Bytecompile (bytecompileModule, bcWrite, bcRead, runBC, showBC)
+import Bytecompile (bytecompileModule, bytecompileModuleNoOpt, bcWrite, bcRead, runBC, showBC)
 
 import System.Exit ( exitWith, ExitCode(ExitFailure) )
 import Options.Applicative
@@ -54,6 +54,7 @@ parseMode = (, ,) <$>
       <|> flag' InteractiveCEK (long "interactiveCEK" <> short 'k' <> help "Ejecutar interactivamente en la CEK")
       <|> flag' CEK (long "cek" <> short 'l' <> help "Ejecutar en la CEK")
       <|> flag' Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la BVM")
+      <|> flag' BytecompileNoOpt (long "bytecompileNoOpt" <> short 'n' <> help "Compilar a la BVM sin Optimizaciones (sin Tailcall)")
       <|> flag' RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
       <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
       <|> flag Eval        Eval        (long "eval" <> short 'e' <> help "Evaluar programa")
@@ -151,6 +152,11 @@ compileFile f = do
                       bc <- bytecompileModule (catMaybes declsF)
                       -- printFD4 $ showBC bc 
                       liftIO $ bcWrite bc (dropExtension f ++ ".bc32")
+      BytecompileNoOpt -> do
+                            declsF <- mapM handleDecl decls
+                            bc <- bytecompileModuleNoOpt (catMaybes declsF)
+                            -- printFD4 $ showBC bc 
+                            liftIO $ bcWrite bc (dropExtension f ++ ".noopt.bc32")
       CEK -> do
                 mapM_ handleDecl decls
                 p <- getProf
@@ -219,6 +225,7 @@ handleDecl d@(SDDecl _ _ _ _) = do
       InteractiveCEK -> run runCEKDecl d
       CEK -> run runCEKDecl d
       Bytecompile -> run return d
+      BytecompileNoOpt -> run return d
       CC -> run return d
       _ -> failFD4 "No deberia llegar aca"
     where

@@ -12,7 +12,7 @@ Este módulo permite compilar módulos a la Macchina. También provee
 una implementación de la Macchina para ejecutar el bytecode.
 -}
 module Bytecompile
-  (Bytecode, runBC, bcWrite, bcRead, bytecompileModule, showBC)
+  (Bytecode, runBC, bcWrite, bcRead, bytecompileModule, showBC, bytecompileModuleNoOpt)
  where
 
 import Lang
@@ -104,6 +104,44 @@ showOps (x:xs)           = show x : showOps xs
 
 showBC :: Bytecode -> String
 showBC = intercalate "; " . showOps
+
+bccNoOpt :: MonadFD4 m => TTerm -> m Bytecode
+bccNoOpt (Const _ (CNat v)) = return [CONST, v]
+bccNoOpt (BinaryOp _ op t1 t2) = do 
+                              b1 <- bccNoOpt t1
+                              b2 <- bccNoOpt t2
+                              case op of 
+                                Add -> return $ b1 ++ b2 ++ [ADD]
+                                Sub -> return $ b1 ++ b2 ++ [SUB]
+bccNoOpt (V _ (Bound i)) = return [ACCESS, i]
+bccNoOpt (App _ t1 t2) = do 
+                      b1 <- bccNoOpt t1
+                      b2 <- bccNoOpt t2
+                      return $ b1 ++ b2 ++ [CALL]
+bccNoOpt (Lam _ _ _ (Sc1 t)) = do 
+                            b <- bccNoOpt t
+                            return $ [FUNCTION, 1 + length b] ++ b ++ [RETURN]
+bccNoOpt (Let _ _ _ t1 (Sc1 t2)) = do 
+                      b1 <- bccNoOpt t1
+                      b2 <- bccNoOpt t2
+                      return $ b1 ++ [SHIFT] ++ b2 ++ [DROP]
+bccNoOpt (Fix _ _ _ _ _ (Sc2 t)) = do 
+                            b <- bccNoOpt t
+                            return $ [FUNCTION, 1 + length b] ++ b ++ [RETURN, FIX]
+bccNoOpt (IfZ _ c t1 t2) = do 
+                        bc <- bccNoOpt c
+                        b1 <- bccNoOpt t1
+                        b2 <- bccNoOpt t2
+                        return $ bc ++ [CJUMP, 2 + length b1] ++ b1 ++ [JUMP, length b2] ++ b2
+bccNoOpt (Print _ s t) = do
+                      b <- bccNoOpt t
+                      return $ b ++ [PRINT] ++ (string2bc s) ++ [NULL, PRINTN]
+bccNoOpt _ = failFD4 "Error: termino desconocido"
+
+bytecompileModuleNoOpt :: MonadFD4 m => Module -> m Bytecode
+bytecompileModuleNoOpt m = do
+                        b <- bccNoOpt (letify (map gl2fr m))
+                        return $ b ++ [STOP]
 
 bcc :: MonadFD4 m => TTerm -> m Bytecode
 bcc (Const _ (CNat v)) = return [CONST, v]
