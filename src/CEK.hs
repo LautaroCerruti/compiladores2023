@@ -68,7 +68,6 @@ runCEK t = do
             return $ toTTerm v
 
 toTTerm :: Val -> TTerm
-toTTerm (ConstN n) = Const (NoPos, NatTy Nothing) (CNat n)  -- ver sinonimos de tipos 
+toTTerm (ConstN n) = Const (NoPos, NatTy Nothing) (CNat n)
 toTTerm (VClos (ClosFun _ x ty t)) = Lam (NoPos, ty) x ty (Sc1 t)
 toTTerm (VClos (ClosFix _ f fty x ty t)) = Fix (NoPos, ty) f fty x ty (Sc2 t)
-

@@ -219,7 +219,7 @@ runMacchina btc env stack = do
                           runMacchina' (SUB : c) e ((I n) : (I m) : s) = runMacchina c e ((I (semOp Sub m n)) : s)
                           runMacchina' (ACCESS : i : c) e s = runMacchina c e ((e!!i) : s)
                           runMacchina' (CALL : c) e (v : (Fun ef cf) : s) = runMacchina cf (v : ef) ((RA e c) : s)
-                          runMacchina' (FUNCTION : l : c) e s = addClousureCount >>= \_ -> runMacchina (drop l c) e ((Fun e (take l c)) : s)
+                          runMacchina' (FUNCTION : l : c) e s = addClousureCount >>= \_ -> runMacchina (drop l c) e ((Fun e c) : s)
                           runMacchina' (RETURN : _) _ (v : (RA e c) : s) = runMacchina c e (v : s)
                           runMacchina' (TAILCALL : _) _ (v : (Fun ef cf) : s) = runMacchina cf (v : ef) s
                           runMacchina' (SHIFT : c) e (v : s) = runMacchina c (v : e) s
