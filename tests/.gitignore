@@ -2,5 +2,6 @@
 
 *.check*
 *.bc32
+*.bc8
 *.actual_out*
 *.actual_opt_out

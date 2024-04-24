@@ -22,6 +22,10 @@ CHECK	+= $(patsubst %,%.check_eval,$(TESTS))
 CHECK	+= $(patsubst %,%.check_cek,$(TESTS))
 CHECK	+= $(patsubst %,%.check_bc32_h,$(TESTS))
 CHECK	+= $(patsubst %,%.check_bc32,$(TESTS))
+CHECK	+= $(patsubst %,%.check_bc32noopt_h,$(TESTS))
+CHECK	+= $(patsubst %,%.check_bc32noopt,$(TESTS))
+CHECK	+= $(patsubst %,%.check_bc8_h,$(TESTS))
+CHECK	+= $(patsubst %,%.check_bc8noopt_h,$(TESTS))
 CHECK	+= $(patsubst %,%.check_eval_opt,$(TESTS))
 # CHECK	+= $(patsubst %,%.check_opt,$(TESTS))
 CHECK	+= $(patsubst %,%.check_c,$(TESTS))
@@ -81,6 +85,29 @@ accept: $(patsubst %,%.accept,$(TESTS))
 	$(Q)touch $@
 	@echo "OK	CEK	$(patsubst %.out,%,$<)"
 
+# Bytecode sin optimizaciones. Primero la regla para generar el bytecode, no se chequea
+# nada.
+%.noopt.bc32: %.fd4 $(EXE)
+	$(Q)$(EXE) $(EXTRAFLAGS) --bytecompileNoOpt $< >/dev/null
+
+# Correr bytecode para generar la salida (con VM en C).
+# Finalmente la comparación.
+%.fd4.actual_out_bc32noopt: %.noopt.bc32 $(VM)
+	$(Q)$(VM) $< > $@
+
+%.check_bc32noopt: %.out %.actual_out_bc32noopt
+	$(Q)diff -u $^
+	$(Q)touch $@
+	@echo "OK	BC32NO		$(patsubst %.out,%,$<)"
+
+# Idem pero para Macchina en Haskell.
+%.fd4.actual_out_bc32noopt_h: %.noopt.bc32 $(EXE)
+	$(Q)$(EXE) $(EXTRAFLAGS) --runVM $< > $@
+
+%.check_bc32noopt_h: %.out %.actual_out_bc32noopt_h
+	$(Q)diff -u $^
+	$(Q)touch $@
+	@echo "OK	BC32NO H	$(patsubst %.out,%,$<)"
 
 # Bytecode. Primero la regla para generar el bytecode, no se chequea
 # nada.
@@ -105,6 +132,38 @@ accept: $(patsubst %,%.accept,$(TESTS))
 	$(Q)diff -u $^
 	$(Q)touch $@
 	@echo "OK	BC32 H	$(patsubst %.out,%,$<)"
+
+
+
+# Bytecode8 sin optimizaciones. Primero la regla para generar el bytecode, no se chequea
+# nada.
+%.noopt.bc8: %.fd4 $(EXE)
+	$(Q)$(EXE) $(EXTRAFLAGS) --bytecompileNoOpt8 $< >/dev/null
+
+# chequeo si coninside la salida con ejecutarlo en la macchina en haskell.
+%.fd4.actual_out_bc8noopt_h: %.noopt.bc8 $(EXE)
+	$(Q)$(EXE) $(EXTRAFLAGS) --runVM8 $< > $@
+
+%.check_bc8noopt_h: %.out %.actual_out_bc8noopt_h
+	$(Q)diff -u $^
+	$(Q)touch $@
+	@echo "OK	BC8NO H	$(patsubst %.out,%,$<)"
+
+# Bytecode8. Primero la regla para generar el bytecode, no se chequea
+# nada.
+%.bc8: %.fd4 $(EXE)
+	$(Q)$(EXE) $(EXTRAFLAGS) --bytecompile8 $< >/dev/null
+
+# chequeo si coninside la salida con ejecutarlo en la macchina en haskell.
+%.fd4.actual_out_bc8_h: %.bc8 $(EXE)
+	$(Q)$(EXE) $(EXTRAFLAGS) --runVM8 $< > $@
+
+%.check_bc8_h: %.out %.actual_out_bc8_h
+	$(Q)diff -u $^
+	$(Q)touch $@
+	@echo "OK	BC8 H	$(patsubst %.out,%,$<)"
+
+
 
 # Chequear optimizaciones. No se corre nada, sólo se compara
 # la salida de --typecheck --optimize respecto a la esperada
@@ -155,9 +214,16 @@ accept: $(patsubst %,%.accept,$(TESTS))
 .SECONDARY: $(patsubst %,%.actual_out_c,$(TESTS))
 .SECONDARY: $(patsubst %,%.actual_out_bc32,$(TESTS))
 .SECONDARY: $(patsubst %,%.actual_out_bc32_h,$(TESTS))
+.SECONDARY: $(patsubst %,%.actual_out_bc32noopt,$(TESTS))
+.SECONDARY: $(patsubst %,%.actual_out_bc32noopt_h,$(TESTS))
+.SECONDARY: $(patsubst %,%.actual_out_bc8noopt_h,$(TESTS))
+.SECONDARY: $(patsubst %,%.actual_out_bc8_h,$(TESTS))
 .SECONDARY: $(patsubst %,%.actual_out_eval_opt,$(TESTS))
 .SECONDARY: $(patsubst %,%.actual_opt_out,$(TESTS))
 .SECONDARY: $(patsubst %.fd4,%.bc32,$(TESTS))
+.SECONDARY: $(patsubst %.fd4,%.bc32noopt,$(TESTS))
+.SECONDARY: $(patsubst %.fd4,%.bc8,$(TESTS))
+.SECONDARY: $(patsubst %.fd4,%.bc8noopt,$(TESTS))
 .SECONDARY: $(patsubst %.fd4,%.c,$(TESTS))
 
 .PHONY: test_all accept
