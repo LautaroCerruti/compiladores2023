@@ -40,7 +40,10 @@ data Mode =
   | CEK
   | Bytecompile
   | BytecompileNoOpt
+  | Bytecompile8
+  | BytecompileNoOpt8
   | RunVM
+  | RunVM8
   | CC
   -- | Canon
   -- | Assembler

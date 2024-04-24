@@ -23,6 +23,7 @@ import Control.Exception ( catch , IOException )
 import System.IO ( hPrint, stderr, hPutStrLn )
 import Data.Maybe ( fromMaybe, catMaybes )
 import Bytecompile (bytecompileModule, bytecompileModuleNoOpt, bcWrite, bcRead, runBC, showBC)
+import Bytecompile8 (bytecompileModule8, bytecompileModuleNoOpt8, bcWrite8, bcRead8, runBC8, showBC8)
 
 import System.Exit ( exitWith, ExitCode(ExitFailure) )
 import Options.Applicative
@@ -55,7 +56,10 @@ parseMode = (, ,) <$>
       <|> flag' CEK (long "cek" <> short 'l' <> help "Ejecutar en la CEK")
       <|> flag' Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la BVM")
       <|> flag' BytecompileNoOpt (long "bytecompileNoOpt" <> short 'n' <> help "Compilar a la BVM sin Optimizaciones (sin Tailcall)")
+      <|> flag' BytecompileNoOpt8 (long "bytecompileNoOpt8" <> short 'v' <> help "Compilar a la BVM 8bits sin Optimizaciones (sin Tailcall)")
+      <|> flag' Bytecompile8 (long "bytecompile8" <> short 'b' <> help "Compilar a la BVM de 8 bits")
       <|> flag' RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
+      <|> flag' RunVM8 (long "runVM8" <> short 'y' <> help "Ejecutar bytecode8 en la BVM de 8 bits")
       <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
       <|> flag Eval        Eval        (long "eval" <> short 'e' <> help "Evaluar programa")
       <|> flag' CC (long "cc" <> short 'c' <> help "Compilar a código C")
@@ -87,7 +91,11 @@ main = execParser opts >>= go
               runOrFailProf (Conf opt True RunVM) $ mapM_ runVM files
     go (RunVM, opt, prof, files) =
               runOrFail (Conf opt prof RunVM) $ mapM_ runVM files
-    go (CEK, opt, True, files) =
+    go (RunVM8, opt, True, files) = 
+              runOrFailProf (Conf opt True RunVM8) $ mapM_ runVM files
+    go (RunVM8, opt, prof, files) =
+              runOrFail (Conf opt prof RunVM8) $ mapM_ runVM files
+    go (CEK, opt, True, files) = 
               runOrFailProf (Conf opt True CEK) $ mapM_ compileFile files
     go (m, opt, prof, files) =
               runOrFail (Conf opt prof m) $ mapM_ compileFile files
@@ -157,6 +165,16 @@ compileFile f = do
                             bc <- bytecompileModuleNoOpt (catMaybes declsF)
                             -- printFD4 $ showBC bc 
                             liftIO $ bcWrite bc (dropExtension f ++ ".noopt.bc32")
+      Bytecompile8 -> do
+                      declsF <- mapM handleDecl decls
+                      bc <- bytecompileModule8 (catMaybes declsF)
+                      -- printFD4 $ showBC8 bc 
+                      liftIO $ bcWrite8 bc (dropExtension f ++ ".bc8")
+      BytecompileNoOpt8 -> do
+                            declsF <- mapM handleDecl decls
+                            bc <- bytecompileModuleNoOpt8 (catMaybes declsF)
+                            -- printFD4 $ showBC8 bc 
+                            liftIO $ bcWrite8 bc (dropExtension f ++ ".noopt.bc8")
       CEK -> do
                 mapM_ handleDecl decls
                 p <- getProf
@@ -178,11 +196,22 @@ compileFile f = do
             mapM_ handleDecl decls
             setInter i
 
+runVMaux :: MonadFD4 m => FilePath -> m ()
+runVMaux f = do
+              m <- getMode
+              case m of
+                RunVM -> do
+                          bc <- liftIO $ bcRead f
+                          runBC bc
+                RunVM8 -> do
+                          bc <- liftIO $ bcRead8 f
+                          runBC8 bc
+                _ -> failFD4 "No deberia llegar aca"
+
 runVM :: MonadFD4 m => FilePath -> m ()
 runVM f = do
-            bc <- liftIO $ bcRead f
+            runVMaux f
             p <- getProf
-            runBC bc
             _ <- if p then do s <- getProfStep
                               printFD4 $ "Cantidad de pasos VM: " ++ (show s)
                               ss <- getProfMaxStack
@@ -226,6 +255,8 @@ handleDecl d@(SDDecl _ _ _ _) = do
       CEK -> run runCEKDecl d
       Bytecompile -> run return d
       BytecompileNoOpt -> run return d
+      Bytecompile8 -> run return d
+      BytecompileNoOpt8 -> run return d
       CC -> run return d
       _ -> failFD4 "No deberia llegar aca"
     where
