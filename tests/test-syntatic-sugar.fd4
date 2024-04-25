@@ -1,0 +1,27 @@
+let ya : Nat = ifz 0 then 1 else 2
+
+type p = Nat -> Nat
+
+let za : Nat = print "asdadasdasd " ya
+
+let a : Nat -> Nat -> Nat -> Nat = (fun (x:Nat) -> (fun (y:Nat) -> (fun (z:Nat) -> (print "algo" z))))
+
+let a2 : Nat -> Nat = print "algo"
+
+let b : Nat->Nat->Nat = fix (f:Nat->Nat->Nat)(x1:Nat) -> fun (x2:Nat) -> ifz (x1-x2) then 0 else f (x1) (x2+1)
+
+let b2 : Nat -> Nat -> Nat = fix (b2 : Nat -> Nat -> Nat) (x1 x2 : Nat) -> ifz x1 - x2 then 0 else b2 x1 (x2 + 1)
+
+let f : Nat = let f (x y z:Nat):Nat = x+z in print "x=" (f 1 2 3)
+let f' : Nat = let f' : Nat -> Nat -> Nat -> Nat = fun (x: Nat) -> fun (y : Nat) -> fun (z : Nat) -> x + z in print "x=" (f' 1 2 3)
+
+let g : Nat = let g (x:Nat)(y:Nat)(z:Nat):Nat = x+z in print "x=" (g 1 2 3)
+
+let h : Nat = let rec fr (x1:Nat)(x2:Nat) : Nat = ifz (x1-x2) then 0 else fr (x1) (x2+1) in fr 5 1
+
+
+let letdecl (x:Nat) : Nat = x + 1
+let letdecl' : Nat -> Nat = fun (x : Nat) -> x + 1
+
+let rec triang (x:Nat) : Nat = ifz x then 1 else x + triang (x-1)
+let triang' : Nat -> Nat = fix (triang': Nat -> Nat) (x : Nat) -> ifz x then 1 else x + triang' (x-1)

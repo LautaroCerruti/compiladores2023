@@ -19,8 +19,8 @@ module Bytecompile8
 import Lang
 import MonadFD4
 import Common
-import Subst (glb2freeTerm, close)
-import Utils (semOp)
+import Subst (glb2freeTerm, close, shiftIndexes)
+import Utils (semOp, usesLetInBody)
 
 import qualified Data.ByteString.Lazy as BS
 import Data.Binary ( Word8, Binary(put, get), decode, encode, putWord8, getWord8)
@@ -160,10 +160,15 @@ bcc (App _ t1 t2) = do
 bcc (Lam _ _ _ (Sc1 t)) = do 
                             b <- bct t
                             return $ [FUNCTION] ++ int2bc (length b) ++ b
-bcc (Let _ _ _ t1 (Sc1 t2)) = do 
-                                b1 <- bcc t1
-                                b2 <- bcc t2
-                                return $ b1 ++ [SHIFT] ++ b2 ++ [DROP]
+bcc (Let _ _ _ t1 (Sc1 t2)) 
+  | usesLetInBody t2 = do 
+                        b1 <- bcc t1
+                        b2 <- bcc t2
+                        return $ b1 ++ [SHIFT] ++ b2 ++ [DROP]
+  | otherwise = do 
+                  b1 <- bcc t1
+                  b2 <- bcc (shiftIndexes t2)
+                  return $ b1 ++ [SHIFT, DROP] ++ b2
 bcc (Fix _ _ _ _ _ (Sc2 t)) = do 
                             b <- bct t
                             return $ [FUNCTION] ++ int2bc (length b) ++ b ++ [FIX]
@@ -187,18 +192,28 @@ bct (IfZ _ c t1 t2) = do
                         b1 <- bct t1
                         b2 <- bct t2
                         return $ bc ++ [CJUMP] ++ int2bc (length b1) ++ b1 ++ b2
-bct (Let _ _ _ t1 (Sc1 t2)) = do 
-                                b1 <- bcc t1
-                                b2 <- bct t2
-                                return $ b1 ++ [SHIFT] ++ b2
+bct (Let _ _ _ t1 (Sc1 t2)) 
+  | usesLetInBody t2 = do 
+                        b1 <- bcc t1
+                        b2 <- bct t2
+                        return $ b1 ++ [SHIFT] ++ b2
+  | otherwise = do 
+                  b1 <- bcc t1
+                  b2 <- bct (shiftIndexes t2)
+                  return $ b1 ++ [SHIFT, DROP] ++ b2
 bct t = do bc <- bcc t
            return $ bc ++ [RETURN]
 
 bcs :: MonadFD4 m => TTerm -> m Bytecode8
-bcs (Let _ _ _ t1 (Sc1 t2)) = do 
-                                b1 <- bcc t1
-                                b2 <- bcs t2
-                                return $ b1 ++ [SHIFT] ++ b2
+bcs (Let _ _ _ t1 (Sc1 t2)) 
+  | usesLetInBody t2 = do 
+                        b1 <- bcc t1
+                        b2 <- bcs t2
+                        return $ b1 ++ [SHIFT] ++ b2
+  | otherwise = do 
+                  b1 <- bcc t1
+                  b2 <- bcs (shiftIndexes t2)
+                  return $ b1 ++ [SHIFT, DROP] ++ b2
 bcs (IfZ _ c t1 t2) = do
                         bc <- bcc c
                         b1 <- bcs t1
