@@ -1,0 +1,11 @@
+let f (x:Nat) : Nat =
+    let u1 : Nat = print "x = " x in
+    let x2 : Nat = x+1 in
+    let u2 : Nat = print "x2 = " x2 in
+    let x3 : Nat = x2+1 in
+    let u3 : Nat = print "x3 = " x3 in
+    let x4 : Nat = x3+1 in
+    let u4 : Nat = print "x4 = " x4 in
+    print "AAAAAAAAAA" 0
+
+let a : Nat = f 1

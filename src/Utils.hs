@@ -19,3 +19,15 @@ usesLetInBody = usesLetInBody' 0
     usesLetInBody' i (IfZ _ c t1 t2) = usesLetInBody' i c || usesLetInBody' i t1 || usesLetInBody' i t2
     usesLetInBody' i (Print _ _ t) = usesLetInBody' i t
     usesLetInBody' _ _ = False
+
+treeChanged :: TTerm -> TTerm -> Bool
+treeChanged (V _ _) (V _ _) = False
+treeChanged (Const _ _) (Const _ _) = False
+treeChanged (Lam _ _ _ (Sc1 t)) (Lam _ _ _ (Sc1 t')) = treeChanged t t'
+treeChanged (Fix _ _ _ _ _ (Sc2 t)) (Fix _ _ _ _ _ (Sc2 t')) = treeChanged t t'
+treeChanged (Print _ _ t) (Print _ _ t') = treeChanged t t'
+treeChanged (BinaryOp _ _ t1 t2) (BinaryOp _ _ t1' t2') = treeChanged t1 t1' || treeChanged t2 t2'
+treeChanged (App _ t1 t2) (App _ t1' t2') = treeChanged t1 t1' || treeChanged t2 t2'
+treeChanged (Let _ _ _ t1 (Sc1 t2)) (Let _ _ _ t1' (Sc1 t2')) = treeChanged t1 t1' || treeChanged t2 t2'
+treeChanged (IfZ _ c t1 t2) (IfZ _ c' t1' t2') = treeChanged c c' || treeChanged t1 t1' || treeChanged t2 t2'
+treeChanged _ _ = True

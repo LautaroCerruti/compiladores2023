@@ -2,9 +2,35 @@ module Optimize where
 
 import Lang
 import MonadFD4 ( MonadFD4, lookupDecl, failFD4 )
-import Subst (subst)
-import Utils (semOp)
+import Subst (subst, shiftIndexes)
+import Utils (semOp, usesLetInBody, treeChanged)
 import Common ( Pos )
+
+deadCodeElimination :: MonadFD4 m => TTerm -> m TTerm
+deadCodeElimination (Let p v ty def (Sc1 t)) = hasEffects def >>= \e ->
+  if usesLetInBody t || e 
+  then do 
+          def' <- deadCodeElimination def
+          t' <- deadCodeElimination t
+          return $ Let p v ty def' (Sc1 t')
+  else deadCodeElimination (shiftIndexes t)
+deadCodeElimination (Print p str t) = deadCodeElimination t >>= \t' -> return $ Print p str t'
+deadCodeElimination (IfZ p c t1 t2) = do 
+                                        c' <- deadCodeElimination c
+                                        t1' <- deadCodeElimination t1
+                                        t2' <- deadCodeElimination t2
+                                        return $ IfZ p c' t1' t2'
+deadCodeElimination (Lam p v ty (Sc1 t)) = deadCodeElimination t >>= \t' -> return $ Lam p v ty (Sc1 t')
+deadCodeElimination (App p t u) = do 
+                                    t' <- deadCodeElimination t
+                                    u' <- deadCodeElimination u
+                                    return $ App p t' u'
+deadCodeElimination (Fix p f fty x xty (Sc2 t)) = deadCodeElimination t >>= \t' -> return $ Fix p f fty x xty (Sc2 t')
+deadCodeElimination (BinaryOp p op tf ts) = do 
+                                              tf' <- deadCodeElimination tf
+                                              ts' <- deadCodeElimination ts
+                                              return $ BinaryOp p op tf' ts'
+deadCodeElimination t = return t
 
 constantPropagation :: MonadFD4 m => TTerm -> Scope (Pos,Ty) Var -> m TTerm
 constantPropagation u t = return $ subst u t
@@ -22,9 +48,6 @@ constantFolding t@(Const _ (CNat _)) = return t
 constantFolding (Print p str t) = do 
                                     t' <- constantFolding t
                                     return (Print p str t')
--- constantFolding convencional dejaria el If como esta, nosotros decidimos realizar la mejora de
--- sparse conditional constant propagation. Si la condicion evalua a una constante, ya sabemos que 
--- rama del Ifz es la que se va a ejecutar
 constantFolding (IfZ p c t1 t2) = do
                                     c'  <- constantFolding c
                                     case c' of
@@ -48,7 +71,8 @@ constantFolding (Let p v ty def (Sc1 t)) = do
                                       def' <- constantFolding def
                                       case def' of
                                         (Const _ _) -> do t' <- constantPropagation def' (Sc1 t)
-                                                          constantFolding t'
+                                                          t'' <- constantFolding t'
+                                                          return (Let p v ty def' (Sc1 t''))
                                         _           -> do t' <- constantFolding t
                                                           return (Let p v ty def' (Sc1 t'))
 constantFolding (BinaryOp p op tf ts) = do t1' <- constantFolding tf
@@ -110,6 +134,14 @@ hasEffects (BinaryOp p op t1 t2) = do
                                       return (t1b || t2b)
 
 optimizeDecl :: MonadFD4 m  => Decl TTerm -> m (Decl TTerm)
-optimizeDecl (Decl p n ty t) = do 
-                                  t' <- constantFolding t
+optimizeDecl (Decl p n ty t) = do
+                                  t' <- optimizeTerm t 20
                                   return (Decl p n ty t')
+
+optimizeTerm :: MonadFD4 m  => TTerm -> Int -> m (TTerm)
+optimizeTerm t n = do 
+                            t1 <- constantFolding t
+                            t2 <- deadCodeElimination t1
+                            if n > 1 && treeChanged t t2 
+                              then optimizeTerm t2 (n-1)
+                              else return t2
