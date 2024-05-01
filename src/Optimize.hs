@@ -2,18 +2,19 @@ module Optimize where
 
 import Lang
 import MonadFD4 ( MonadFD4, lookupDecl, failFD4 )
-import Subst (subst, shiftIndexes)
+import Subst (subst, shiftIndexes, substWhileFixingIndexes)
 import Utils (semOp, usesLetInBody, treeChanged)
 import Common ( Pos )
 
 deadCodeElimination :: MonadFD4 m => TTerm -> m TTerm
-deadCodeElimination (Let p v ty def (Sc1 t)) = hasEffects def >>= \e ->
-  if usesLetInBody t || e 
-  then do 
-          def' <- deadCodeElimination def
-          t' <- deadCodeElimination t
-          return $ Let p v ty def' (Sc1 t')
-  else deadCodeElimination (shiftIndexes t)
+deadCodeElimination (Let p v ty def (Sc1 t)) = do 
+                                                  he <- hasEffects def
+                                                  t' <- deadCodeElimination t
+                                                  if usesLetInBody t' || he
+                                                  then do
+                                                        def' <- deadCodeElimination def
+                                                        return $ Let p v ty def' (Sc1 t')
+                                                  else return $ shiftIndexes t'
 deadCodeElimination (Print p str t) = deadCodeElimination t >>= \t' -> return $ Print p str t'
 deadCodeElimination (IfZ p c t1 t2) = do 
                                         c' <- deadCodeElimination c
@@ -103,6 +104,33 @@ constantFolding (BinaryOp p op tf ts) = do t1' <- constantFolding tf
                                                                  constantFolding (BinaryOp p Sub t1 t4)
                 bopFold _ t1' t2'  = return (BinaryOp p op t1' t2')
 
+inlineExpansion :: MonadFD4 m => TTerm -> m TTerm
+inlineExpansion (Let i n ty def sc@(Sc1 t)) = do 
+                                        he <- hasEffects def
+                                        if not he
+                                        then inlineExpansion $ substWhileFixingIndexes def sc
+                                        else do 
+                                                def' <- inlineExpansion def
+                                                t' <- inlineExpansion t
+                                                return $ Let i n ty def' (Sc1 t')
+inlineExpansion (Print p str t) = inlineExpansion t >>= \t' -> return $ Print p str t'
+inlineExpansion (IfZ p c t1 t2) = do 
+                                        c' <- inlineExpansion c
+                                        t1' <- inlineExpansion t1
+                                        t2' <- inlineExpansion t2
+                                        return $ IfZ p c' t1' t2'
+inlineExpansion (Lam p v ty (Sc1 t)) = inlineExpansion t >>= \t' -> return $ Lam p v ty (Sc1 t')
+inlineExpansion (App p t u) = do 
+                                    t' <- inlineExpansion t
+                                    u' <- inlineExpansion u
+                                    return $ App p t' u'
+inlineExpansion (Fix p f fty x xty (Sc2 t)) = inlineExpansion t >>= \t' -> return $ Fix p f fty x xty (Sc2 t')
+inlineExpansion (BinaryOp p op tf ts) = do 
+                                              tf' <- inlineExpansion tf
+                                              ts' <- inlineExpansion ts
+                                              return $ BinaryOp p op tf' ts'
+inlineExpansion t = return t
+
 hasEffects :: MonadFD4 m => TTerm -> m Bool
 hasEffects (V _ (Bound _)) = return False
 hasEffects (V _ (Free _)) = return False
@@ -135,13 +163,14 @@ hasEffects (BinaryOp p op t1 t2) = do
 
 optimizeDecl :: MonadFD4 m  => Decl TTerm -> m (Decl TTerm)
 optimizeDecl (Decl p n ty t) = do
-                                  t' <- optimizeTerm t 20
+                                  t' <- optimizeTerm t 100
                                   return (Decl p n ty t')
 
 optimizeTerm :: MonadFD4 m  => TTerm -> Int -> m (TTerm)
 optimizeTerm t n = do 
-                            t1 <- constantFolding t
-                            t2 <- deadCodeElimination t1
-                            if n > 1 && treeChanged t t2 
-                              then optimizeTerm t2 (n-1)
-                              else return t2
+                    t1 <- inlineExpansion t
+                    t2 <- constantFolding t1
+                    t3 <- deadCodeElimination t2
+                    if n > 1 && treeChanged t t3 
+                      then optimizeTerm t3 (n-1)
+                      else return t3

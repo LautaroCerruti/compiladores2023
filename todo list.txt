@@ -1,13 +1,9 @@
 P3) Comparar ack 3 11 entre la macchina en haskell y C nativo
 P4) punto 7 y 8
-P5) hacer optimizaciones opcionales, agregar testing para profiling y para opt typecheck, 
-    tal vez mejorar fun tamaño del stack en profiling
-
-    Revisar el caso de los funs y los apps con prints 
-        fun (x : Nat) -> (fun (y0 : Nat) -> (fun (z0 : Nat) -> print "algo" z0) y0) x
-        ==>
-        fun (x : Nat) (y0 : Nat) -> (fun (z0 : Nat) -> (print "algo") y0) x
-        ==>
-        fun (x : Nat) -> print "algo" x
+P5) 
+    - Inline Expansion solo hecho el let
+    - ver si hacer CSE
+    - agregar testing para profiling y para opt typecheck, 
+    - tal vez mejorar fun tamaño del stack en profiling
 
 Arreglar los tests, crear nuevos, etc

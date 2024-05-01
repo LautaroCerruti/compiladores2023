@@ -109,3 +109,10 @@ close2 nm1 nm2 t = Sc2 (varChanger lcl (\_ p i -> V p (Bound i)) t)
 
 shiftIndexes :: Tm info Var -> Tm info Var
 shiftIndexes = varChanger (\_ p x -> V p (Free x)) (\d p i -> if i >= d then V p (Bound (i-1)) else V p (Bound i))
+
+substWhileFixingIndexes :: Tm info Var -> Scope info Var -> Tm info Var
+substWhileFixingIndexes n (Sc1 m) = varChanger (\_ p n -> V p (Free n)) bnd m
+   where bnd depth p i 
+             | i <  depth = V p (Bound i)
+             | i == depth = varChanger (\_ p n -> V p (Free n)) (\d p i -> V p (Bound (i+depth))) n
+             | otherwise  = V p (Bound (i-1))
