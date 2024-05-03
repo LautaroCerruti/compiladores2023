@@ -25,3 +25,5 @@ let letdecl' : Nat -> Nat = fun (x : Nat) -> x + 1
 
 let rec triang (x:Nat) : Nat = ifz x then 1 else x + triang (x-1)
 let triang' : Nat -> Nat = fix (triang': Nat -> Nat) (x : Nat) -> ifz x then 1 else x + triang' (x-1)
+
+let help : Nat = (fun (z : Nat) -> 1 + z) (print "poma" 8)

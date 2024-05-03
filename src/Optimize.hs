@@ -3,8 +3,9 @@ module Optimize where
 import Lang
 import MonadFD4 ( MonadFD4, lookupDecl, failFD4 )
 import Subst (subst, shiftIndexes, substWhileFixingIndexes)
-import Utils (semOp, usesLetInBody, treeChanged)
+import Utils (semOp, usesLetInBody, treeChanged, hasEffects, termSize)
 import Common ( Pos )
+import Global
 
 deadCodeElimination :: MonadFD4 m => TTerm -> m TTerm
 deadCodeElimination (Let p v ty def (Sc1 t)) = do 
@@ -106,13 +107,38 @@ constantFolding (BinaryOp p op tf ts) = do t1' <- constantFolding tf
 
 inlineExpansion :: MonadFD4 m => TTerm -> m TTerm
 inlineExpansion (Let i n ty def sc@(Sc1 t)) = do 
-                                        he <- hasEffects def
-                                        if not he
-                                        then inlineExpansion $ substWhileFixingIndexes def sc
-                                        else do 
-                                                def' <- inlineExpansion def
-                                                t' <- inlineExpansion t
-                                                return $ Let i n ty def' (Sc1 t')
+                                                he <- hasEffects def
+                                                defs <- termSize def
+                                                if not he && defs < termSizeLimit
+                                                then inlineExpansion $ substWhileFixingIndexes def sc
+                                                else do 
+                                                        def' <- inlineExpansion def
+                                                        t' <- inlineExpansion t
+                                                        return $ Let i n ty def' (Sc1 t')
+inlineExpansion (App p l@(Lam i n ty sc@(Sc1 t)) u) = do 
+                                                  he <- hasEffects u
+                                                  us <- termSize u
+                                                  if not he && us < termSizeLimit
+                                                  then inlineExpansion $ substWhileFixingIndexes u sc
+                                                  else do
+                                                          t' <- inlineExpansion t
+                                                          u' <- inlineExpansion u
+                                                          return $ Let i n ty u' (Sc1 t')
+inlineExpansion (App p g@(V i (Global n)) u) = do 
+                                                  lt <- lookupDecl n
+                                                  case lt of
+                                                    Nothing -> failFD4 "Variable no declarada"
+                                                    Just t -> do 
+                                                                ts <- termSize t
+                                                                if ts < termSizeLimit 
+                                                                then inlineExpansion $ App p t u
+                                                                else do u' <- inlineExpansion u
+                                                                        return $ App p g u'
+-- inlineExpansion de app Recursivo
+inlineExpansion (App p t u) = do 
+                                t' <- inlineExpansion t
+                                u' <- inlineExpansion u
+                                return $ App p t' u'
 inlineExpansion (Print p str t) = inlineExpansion t >>= \t' -> return $ Print p str t'
 inlineExpansion (IfZ p c t1 t2) = do 
                                         c' <- inlineExpansion c
@@ -120,46 +146,21 @@ inlineExpansion (IfZ p c t1 t2) = do
                                         t2' <- inlineExpansion t2
                                         return $ IfZ p c' t1' t2'
 inlineExpansion (Lam p v ty (Sc1 t)) = inlineExpansion t >>= \t' -> return $ Lam p v ty (Sc1 t')
-inlineExpansion (App p t u) = do 
-                                    t' <- inlineExpansion t
-                                    u' <- inlineExpansion u
-                                    return $ App p t' u'
 inlineExpansion (Fix p f fty x xty (Sc2 t)) = inlineExpansion t >>= \t' -> return $ Fix p f fty x xty (Sc2 t')
 inlineExpansion (BinaryOp p op tf ts) = do 
                                               tf' <- inlineExpansion tf
                                               ts' <- inlineExpansion ts
                                               return $ BinaryOp p op tf' ts'
+inlineExpansion g@(V i (Global n)) = do 
+                                      lt <- lookupDecl n
+                                      case lt of
+                                        Nothing -> failFD4 "Variable no declarada"
+                                        Just t -> do 
+                                                    ts <- termSize t
+                                                    if ts < termSizeLimit 
+                                                    then inlineExpansion t
+                                                    else return g
 inlineExpansion t = return t
-
-hasEffects :: MonadFD4 m => TTerm -> m Bool
-hasEffects (V _ (Bound _)) = return False
-hasEffects (V _ (Free _)) = return False
-hasEffects (V _ (Global n)) = do 
-                                lt <- lookupDecl n
-                                case lt of
-                                  Nothing -> failFD4 "Variable no declarada"
-                                  Just t -> hasEffects t
-hasEffects (Const _ _) = return False
-hasEffects (Print _ str t) = return True
-hasEffects (IfZ _ c t1 t2) = do
-                                cb <- hasEffects c 
-                                t1b <- hasEffects t1 
-                                t2b <- hasEffects t2
-                                return (cb || t1b || t2b)
-hasEffects (Lam _ _ _ (Sc1 t)) = hasEffects t
-hasEffects (App _ t u) = do
-                          tb <- hasEffects t 
-                          ub <- hasEffects u
-                          return (tb || ub)
-hasEffects (Fix _ _ _ _ _ (Sc2 t)) = return True
-hasEffects (Let _ _ _ def (Sc1 t)) = do
-                                        defb <- hasEffects def 
-                                        tb <- hasEffects t
-                                        return (defb || tb)
-hasEffects (BinaryOp p op t1 t2) = do 
-                                      t1b <- hasEffects t1 
-                                      t2b <- hasEffects t2
-                                      return (t1b || t2b)
 
 optimizeDecl :: MonadFD4 m  => Decl TTerm -> m (Decl TTerm)
 optimizeDecl (Decl p n ty t) = do
