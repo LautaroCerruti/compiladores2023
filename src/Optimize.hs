@@ -134,7 +134,7 @@ inlineExpansion (App p g@(V i (Global n)) u) = do
                                                                 then inlineExpansion $ App p t u
                                                                 else do u' <- inlineExpansion u
                                                                         return $ App p g u'
--- inlineExpansion de app Recursivo
+-- TODO inlineExpansion de app Recursivo
 inlineExpansion (App p t u) = do 
                                 t' <- inlineExpansion t
                                 u' <- inlineExpansion u
