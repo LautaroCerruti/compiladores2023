@@ -158,7 +158,7 @@ compileFile f = do
       Bytecompile -> do
                       declsF <- mapM handleDecl decls
                       bc <- bytecompileModule (catMaybes declsF)
-                      printFD4 $ showBC bc 
+                      -- printFD4 $ showBC bc 
                       liftIO $ bcWrite bc (dropExtension f ++ ".bc32")
       BytecompileNoOpt -> do
                             declsF <- mapM handleDecl decls

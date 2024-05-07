@@ -19,10 +19,11 @@ data GlEnv = GlEnv {
   cantDecl :: Int,      -- ^ Cantidad de declaraciones desde la última carga
   glb :: [Decl TTerm],  -- ^ Entorno con declaraciones globales
   glbTy :: [(Name, Ty)], -- ^ Entorno con declaraciones de tipos
-  profilerState :: (Int, Int, Int) -- ^ Tupla con 3 ints para los datos de profiling
-                                   -- el primero corresponde con la cantidad de pasos (ya sea de la CEK o la vm)
-                                   -- el segundo al tamaño maximo del stack en la vm
-                                   -- el tercero a la cantidad de clausuras creadas en la vm
+  profilerState :: (Int, Int, Int, Int) -- ^ Tupla con 4 ints para los datos de profiling
+                                        -- el primero corresponde con la cantidad de pasos (ya sea de la CEK o la vm)
+                                        -- el segundo el tamaño actual del stack en la vm
+                                        -- el tercero al tamaño maximo del stack en la vm
+                                        -- el cuarto a la cantidad de clausuras creadas en la vm
 }
 
 -- ^ Entorno de tipado de declaraciones globales
@@ -56,7 +57,7 @@ data Conf = Conf {
 
 -- | Valor del estado inicial
 initialEnv :: GlEnv
-initialEnv = GlEnv False "" 0 [] [] (0, 0, 0)
+initialEnv = GlEnv False "" 0 [] [] (0, 0, 0, 0)
 
 termSizeLimit :: Int
 termSizeLimit = 50

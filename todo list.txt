@@ -3,7 +3,7 @@ P4) punto 7 y 8
 P5) 
     - Inline Expansion recursivo
     - ver si hacer CSE
-    - agregar testing para profiling y para opt typecheck, 
-    - tal vez mejorar fun tamaño del stack en profiling
 
+
+agregar testing para profiling y para opt typecheck
 Arreglar los tests, crear nuevos, etc

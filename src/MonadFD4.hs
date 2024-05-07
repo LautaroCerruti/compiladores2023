@@ -79,7 +79,7 @@ y otras operaciones derivadas de ellas, como por ejemplo
 -}
 class (MonadIO m, MonadState GlEnv m, MonadError Error m, MonadReader Conf m) => MonadFD4 m where
   addStep :: m ()
-  checkMaxStack :: [a] -> m ()
+  checkMaxStack :: (Int -> Int) -> m ()
   addClousureCount :: m ()
 
 getOpt :: MonadFD4 m => m Bool
@@ -118,17 +118,17 @@ addTy nt = modify (\s -> s { glbTy = nt : glbTy s})
 getProfStep :: MonadFD4 m => m Int
 getProfStep = do
                 s <- get
-                return $ (\(a,_,_) -> a) $ profilerState s 
+                return $ (\(a,_,_,_) -> a) $ profilerState s 
 
 getProfClousureCount :: MonadFD4 m => m Int
 getProfClousureCount = do
                           s <- get
-                          return $ (\(_,_,c) -> c) $ profilerState s 
+                          return $ (\(_,_,_,d) -> d) $ profilerState s 
 
 getProfMaxStack :: MonadFD4 m => m Int
 getProfMaxStack = do
                 s <- get
-                return $ (\(_,b,_) -> b) $ profilerState s 
+                return $ (\(_,_,c,_) -> c) $ profilerState s 
 
 eraseLastFileDecls :: MonadFD4 m => m ()
 eraseLastFileDecls = do
@@ -187,14 +187,13 @@ newtype FD4Prof a = FD4Prof {r :: FD4 a}
 
 instance MonadFD4 FD4 where
   addStep = return ()
-  checkMaxStack l = return ()
+  checkMaxStack f = return ()
   addClousureCount = return ()
 
 instance MonadFD4 FD4Prof where
-  addStep = modify (\s -> s { profilerState = (\(a,b,c) -> (a+1,b,c)) (profilerState s)})
-  checkMaxStack l = modify (\s -> s { profilerState = (\(a,b,c) -> if b >= size then (a,b,c) else (a,size,c)) (profilerState s)})
-                    where size = length l
-  addClousureCount = modify (\s -> s { profilerState = (\(a,b,c) -> (a,b,c+1)) (profilerState s)})
+  addStep = modify (\s -> s { profilerState = (\(a,b,c,d) -> (a+1,b,c,d)) (profilerState s)})
+  checkMaxStack f = modify (\s -> s { profilerState = (\(a,b,c,d) -> let sa = f b in (a,sa,max c sa,d)) (profilerState s)})
+  addClousureCount = modify (\s -> s { profilerState = (\(a,b,c,d) -> (a,b,c,d+1)) (profilerState s)})
 
 -- 'runFD4\'' corre una computación de la mónad 'FD4' en el estado inicial 'Global.initialEnv' 
 runFD4' :: FD4 a -> Conf -> IO (Either Error (a, GlEnv))
@@ -202,9 +201,6 @@ runFD4' c conf =  runExceptT $ runStateT (runReaderT c conf)  initialEnv
 
 runFD4 :: FD4 a -> Conf -> IO (Either Error a)
 runFD4 c conf = fmap fst <$> runFD4' c conf
-
--- runFD4Prof' :: FD4Prof a -> Conf -> IO (Either Error (a, GlEnv))
--- runFD4Prof' c conf =  runExceptT $ runStateT (runReaderT c conf)  initialEnv
 
 runFD4Prof :: FD4Prof a -> Conf -> IO (Either Error a)
 runFD4Prof c = runFD4 (r c)
