@@ -105,6 +105,15 @@ constantFolding (BinaryOp p op tf ts) = do t1' <- constantFolding tf
                                                                  constantFolding (BinaryOp p Sub t1 t4)
                 bopFold _ t1' t2'  = return (BinaryOp p op t1' t2')
 
+isFix :: TTerm -> Bool
+isFix (Fix _ _ _ _ _ _) = True
+isFix _ = False
+
+appsForFix :: TTerm -> Bool
+appsForFix (App _ t _) = appsForFix t
+appsForFix (Fix _ _ _ _ _ _) = True
+appsForFix _ = False
+
 inlineExpansion :: MonadFD4 m => TTerm -> m TTerm
 inlineExpansion (Let i n ty def sc@(Sc1 t)) = do 
                                                 he <- hasEffects def
@@ -130,15 +139,16 @@ inlineExpansion (App p g@(V i (Global n)) u) = do
                                                     Nothing -> failFD4 "Variable no declarada"
                                                     Just t -> do 
                                                                 ts <- termSize t
-                                                                if ts < termSizeLimit 
+                                                                if ts < termSizeLimit && not (isFix t)
                                                                 then inlineExpansion $ App p t u
                                                                 else do u' <- inlineExpansion u
                                                                         return $ App p g u'
--- TODO inlineExpansion de app Recursivo
-inlineExpansion (App p t u) = do 
-                                t' <- inlineExpansion t
-                                u' <- inlineExpansion u
-                                return $ App p t' u'
+inlineExpansion app@(App p t u) = if appsForFix app 
+                                  then inlineExpansionForFix app
+                                  else do 
+                                          t' <- inlineExpansion t
+                                          u' <- inlineExpansion u
+                                          return $ App p t' u'
 inlineExpansion (Print p str t) = inlineExpansion t >>= \t' -> return $ Print p str t'
 inlineExpansion (IfZ p c t1 t2) = do 
                                         c' <- inlineExpansion c
@@ -161,6 +171,44 @@ inlineExpansion g@(V i (Global n)) = do
                                                     then inlineExpansion t
                                                     else return g
 inlineExpansion t = return t
+
+getFixAndParams :: TTerm -> (TTerm, [TTerm])
+getFixAndParams term = (getFix term, getParams term)
+  where 
+        getFix f@(Fix _ _ _ _ _ _) = f
+        getFix (App _ t _) = getFix t
+        getFix _ = error "No es un Fix"
+        getParams (Fix _ _ _ _ _ _) = []
+        getParams (App _ t u) = u : (getParams t)
+        getParams _ = error "No es un Fix"
+
+getArgsCount :: TTerm -> Int
+getArgsCount (Fix _ _ _ _ _ (Sc2 t)) = 1 + getArgsCount t
+getArgsCount (Lam _ _ _ (Sc1 t)) = 1 + getArgsCount t
+getArgsCount _ = 0
+
+getFixBody :: TTerm -> TTerm
+getFixBody (Fix _ _ _ _ _ (Sc2 t)) = getFixBody t
+getFixBody (Lam _ _ _ (Sc1 t)) = getFixBody t
+getFixBody t = t
+
+getNoChangingParams :: MonadFD4 m => Int -> TTerm -> m [Int]
+getNoChangingParams argsCount body = return []
+
+inlineExpansionForFix :: MonadFD4 m => TTerm -> m TTerm
+inlineExpansionForFix app@(App p t u) = 
+  let (fix, params) = getFixAndParams app 
+      argsCount = getArgsCount fix
+  in
+    if (length params) /= argsCount 
+    then do t' <- inlineExpansion t -- Caso fix sin aplicar completamente
+            u' <- inlineExpansion u
+            return $ App p t' u'
+    else do getNoChangingParams argsCount (getFixBody fix)
+            t' <- inlineExpansion t -- Cambiar esto
+            u' <- inlineExpansion u
+            return $ App p t' u'
+inlineExpansionForFix _ = failFD4 "No se puede hacer inline Expansion Fix de algo que no es un fix"
 
 optimizeDecl :: MonadFD4 m  => Decl TTerm -> m (Decl TTerm)
 optimizeDecl (Decl p n ty t) = do
