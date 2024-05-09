@@ -1,11 +1,12 @@
 module Optimize where
 
 import Lang
-import MonadFD4 ( MonadFD4, lookupDecl, failFD4 )
+import MonadFD4 ( MonadFD4, lookupDecl, failFD4, printFD4 )
 import Subst (subst, shiftIndexes, substWhileFixingIndexes)
 import Utils (semOp, usesLetInBody, treeChanged, hasEffects, termSize)
 import Common ( Pos )
 import Global
+import Data.List ( union )
 
 deadCodeElimination :: MonadFD4 m => TTerm -> m TTerm
 deadCodeElimination (Let p v ty def (Sc1 t)) = do 
@@ -114,6 +115,11 @@ appsForFix (App _ t _) = appsForFix t
 appsForFix (Fix _ _ _ _ _ _) = True
 appsForFix _ = False
 
+isAppNBound :: Int -> TTerm -> Bool
+isAppNBound n (App _ t _) = isAppNBound n t
+isAppNBound n (V _ (Bound bid)) = n == bid 
+isAppNBound _ _ = False
+
 inlineExpansion :: MonadFD4 m => TTerm -> m TTerm
 inlineExpansion (Let i n ty def sc@(Sc1 t)) = do 
                                                 he <- hasEffects def
@@ -133,13 +139,13 @@ inlineExpansion (App p l@(Lam i n ty sc@(Sc1 t)) u) = do
                                                           t' <- inlineExpansion t
                                                           u' <- inlineExpansion u
                                                           return $ Let i n ty u' (Sc1 t')
-inlineExpansion (App p g@(V i (Global n)) u) = do 
+inlineExpansion (App p g@(V _ (Global n)) u) = do 
                                                   lt <- lookupDecl n
                                                   case lt of
                                                     Nothing -> failFD4 "Variable no declarada"
                                                     Just t -> do 
                                                                 ts <- termSize t
-                                                                if ts < termSizeLimit && not (isFix t)
+                                                                if ts < termSizeLimit -- && not (isFix t)
                                                                 then inlineExpansion $ App p t u
                                                                 else do u' <- inlineExpansion u
                                                                         return $ App p g u'
@@ -192,8 +198,34 @@ getFixBody (Fix _ _ _ _ _ (Sc2 t)) = getFixBody t
 getFixBody (Lam _ _ _ (Sc1 t)) = getFixBody t
 getFixBody t = t
 
+getChangingParamsInApp :: Int -> TTerm -> [Int]
+getChangingParamsInApp n (App _ f (V _ (Bound i))) = if n == i then getChangingParamsInApp (n+1) f else n : (getChangingParamsInApp (n-1) f)
+getChangingParamsInApp n (App _ f _) = n : (getChangingParamsInApp (n+1) f)
+getChangingParamsInApp _ _ = [] 
+
+applyGetChangingParamsToApp :: Int -> Int -> TTerm -> [Int]
+applyGetChangingParamsToApp argsCount depth (App _ t u) = union (getChangingParams argsCount depth u) (applyGetChangingParamsToApp argsCount depth t)
+applyGetChangingParamsToApp _ _ _ = []
+
+getChangingParams :: Int -> Int -> TTerm -> [Int]
+getChangingParams _ _ (V _ _) = []
+getChangingParams _ _ (Const _ _) = []
+getChangingParams argsCount depth (Lam _ _ _ (Sc1 t)) = getChangingParams argsCount (depth+1) t
+getChangingParams argsCount depth app@(App _ t u) = 
+  if isAppNBound (argsCount+depth) app
+  then union (getChangingParamsInApp depth app) (applyGetChangingParamsToApp argsCount depth app)
+  else union (getChangingParams argsCount depth t) (getChangingParams argsCount depth u)
+getChangingParams argsCount depth (Print _ _ t) = getChangingParams argsCount depth t
+getChangingParams argsCount depth (BinaryOp _ _ t u) = union (getChangingParams argsCount depth t) (getChangingParams argsCount depth u)
+getChangingParams argsCount depth (Fix _ _ _ _ _ (Sc2 t)) = getChangingParams argsCount (depth+2) t
+getChangingParams argsCount depth (IfZ _ c t u) = union (getChangingParams argsCount depth c) (union (getChangingParams argsCount depth t) (getChangingParams argsCount depth u))
+getChangingParams argsCount depth (Let _ _ _ d (Sc1 t)) = union (getChangingParams argsCount depth d) (getChangingParams argsCount (depth+1) t)
+
+-- argsCount es el indice de la funcion recursiva
 getNoChangingParams :: MonadFD4 m => Int -> TTerm -> m [Int]
-getNoChangingParams argsCount body = return []
+getNoChangingParams argsCount (body) = let paramsChanging = getChangingParams argsCount 0 body in
+                                      do printFD4 (" cambian " ++ (show (paramsChanging)))
+                                         return []
 
 inlineExpansionForFix :: MonadFD4 m => TTerm -> m TTerm
 inlineExpansionForFix app@(App p t u) = 
