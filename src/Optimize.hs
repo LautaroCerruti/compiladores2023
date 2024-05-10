@@ -4,9 +4,9 @@ import Lang
 import MonadFD4 ( MonadFD4, lookupDecl, failFD4, printFD4 )
 import Subst (subst, shiftIndexes, substWhileFixingIndexes)
 import Utils (semOp, usesLetInBody, treeChanged, hasEffects, termSize)
-import Common ( Pos )
+import Common 
 import Global
-import Data.List ( union )
+import Data.List
 
 deadCodeElimination :: MonadFD4 m => TTerm -> m TTerm
 deadCodeElimination (Let p v ty def (Sc1 t)) = do 
@@ -179,7 +179,7 @@ inlineExpansion g@(V i (Global n)) = do
 inlineExpansion t = return t
 
 getFixAndParams :: TTerm -> (TTerm, [TTerm])
-getFixAndParams term = (getFix term, getParams term)
+getFixAndParams term = (getFix term, reverse $ getParams term)
   where 
         getFix f@(Fix _ _ _ _ _ _) = f
         getFix (App _ t _) = getFix t
@@ -221,25 +221,76 @@ getChangingParams argsCount depth (Fix _ _ _ _ _ (Sc2 t)) = getChangingParams ar
 getChangingParams argsCount depth (IfZ _ c t u) = union (getChangingParams argsCount depth c) (union (getChangingParams argsCount depth t) (getChangingParams argsCount depth u))
 getChangingParams argsCount depth (Let _ _ _ d (Sc1 t)) = union (getChangingParams argsCount depth d) (getChangingParams argsCount (depth+1) t)
 
--- argsCount es el indice de la funcion recursiva
-getNoChangingParams :: MonadFD4 m => Int -> TTerm -> m [Int]
-getNoChangingParams argsCount (body) = let paramsChanging = getChangingParams argsCount 0 body in
-                                      do printFD4 (" cambian " ++ (show (paramsChanging)))
-                                         return []
+getNoChangingParams :: Int -> TTerm -> [Int]
+getNoChangingParams argsCount (body) = let paramsChanging = getChangingParams argsCount 0 body 
+                                           paramIdexes = [0 .. argsCount-1]
+                                       in paramIdexes \\ paramsChanging 
+
+data BType = AB | FB
+  deriving (Show, Eq)
+
+getBoundsInfo :: Int -> TTerm -> ((Int, BType, Name, Ty), [(Int, BType, Name, Ty)])
+getBoundsInfo argsC (Fix inf fn fty an aty (Sc2 t)) = ((argsC, FB, fn, fty), getArgs (argsC-1) t ++ [(argsC-1, AB, an, aty)])
+  where 
+        getArgs n (Lam _ an' aty' (Sc1 t')) = getArgs (n-1) t' ++ [((n-1), AB, an', aty')]
+        getArgs _ _ = []
+getBoundsInfo _ _ = error "No es un fix"
+
+-- Hacer esto
+rewriteFixBody :: Int -> [Int] -> [Int] -> TTerm -> TTerm
+rewriteFixBody argsC pc boundC b = b
+
+fixType :: Int -> Int -> [Int] -> Ty -> Ty
+fixType argsC n pc ty@(FunTy t1 t2 name) = 
+  if n==argsC 
+  then ty
+  else 
+    if elem n pc 
+    then fixType argsC (n+1) pc t2 
+    else FunTy t1 (fixType argsC (n+1) pc t2) name
+fixType _ _ _ ty = ty
+
+-- ver si los (NoPos, NatTy) estan bien
+rewriteFixAux :: Int -> [Int] -> [(Int, BType, Name, Ty)] -> [Int] -> TTerm -> TTerm
+rewriteFixAux argsC pc ((_, AB, n, ty):funInfo) inds fixB = Lam (NoPos, NatTy Nothing) n ty (Sc1 (rewriteFixAux argsC pc funInfo inds fixB))
+rewriteFixAux argsC pc ((_, FB, fn, fty):((_, AB, n, ty):funInfo)) inds fixB = Fix (NoPos, NatTy Nothing) fn (fixType argsC 0 pc fty) n ty (Sc2 (rewriteFixAux argsC pc funInfo inds fixB))
+rewriteFixAux argsC pc [] inds fixB = rewriteFixBody argsC pc inds fixB
+rewriteFixAux _ _ _ _ _ = error "No deberia llegar a aca"
+
+rewriteFix :: MonadFD4 m => Int -> [Int] -> TTerm -> m TTerm
+rewriteFix argsC pc t = let (fixD, argsD) = getBoundsInfo argsC t
+                            ls = reverse (map (\i -> (argsD !! i)) pc)
+                            le = reverse (argsD \\ ls)
+                            no = ls ++ [fixD] ++ le
+                            indexesAux = map (\(i, _, _, _) -> i) (reverse no)
+                            indexes = map (\i -> case elemIndex i indexesAux of 
+                                                    Just e -> e
+                                                    Nothing -> error "No deberia pasar") [0 .. argsC]
+                            help = rewriteFixAux argsC pc no indexes (getFixBody t)
+                        in do printFD4 ("HELP  " ++ (show help))
+                              return t
 
 inlineExpansionForFix :: MonadFD4 m => TTerm -> m TTerm
 inlineExpansionForFix app@(App p t u) = 
   let (fix, params) = getFixAndParams app 
       argsCount = getArgsCount fix
-  in
+  in do
     if (length params) /= argsCount 
     then do t' <- inlineExpansion t -- Caso fix sin aplicar completamente
             u' <- inlineExpansion u
             return $ App p t' u'
-    else do getNoChangingParams argsCount (getFixBody fix)
-            t' <- inlineExpansion t -- Cambiar esto
-            u' <- inlineExpansion u
-            return $ App p t' u'
+    else 
+      let ncp = sort $ getNoChangingParams argsCount (getFixBody fix) 
+      in if length ncp == 0 ||  length ncp == argsCount
+         then do 
+                t' <- inlineExpansion t
+                u' <- inlineExpansion u
+                return $ App p t' u'
+         else do 
+                fix' <- rewriteFix argsCount ncp fix
+                t' <- inlineExpansion t -- Cambiar esto
+                u' <- inlineExpansion u
+                return $ App p t' u'
 inlineExpansionForFix _ = failFD4 "No se puede hacer inline Expansion Fix de algo que no es un fix"
 
 optimizeDecl :: MonadFD4 m  => Decl TTerm -> m (Decl TTerm)

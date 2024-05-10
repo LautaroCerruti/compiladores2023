@@ -1,3 +1,4 @@
-let rec triang (w x y z:Nat) : Nat = ifz x then (ifz x then y else triang (w-1) (x-1) y z) else (fun (l : Nat) -> triang w (x-1) y (z-1)) 1
+let rec triang (w x y z:Nat) : Nat = 
+    ifz x then (ifz x then y else triang w (x-1) y z) else (fun (l : Nat) -> triang w (x-1) y (z-1)) 1
 
 let a : Nat = print "HOLA " (triang 1 2 1000 1)
