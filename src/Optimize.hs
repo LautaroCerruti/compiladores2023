@@ -145,7 +145,7 @@ inlineExpansion (App p g@(V _ (Global n)) u) = do
                                                     Nothing -> failFD4 "Variable no declarada"
                                                     Just t -> do 
                                                                 ts <- termSize t
-                                                                if ts < termSizeLimit -- && not (isFix t)
+                                                                if ts < termSizeLimit
                                                                 then inlineExpansion $ App p t u
                                                                 else do u' <- inlineExpansion u
                                                                         return $ App p g u'
@@ -236,9 +236,25 @@ getBoundsInfo argsC (Fix inf fn fty an aty (Sc2 t)) = ((argsC, FB, fn, fty), get
         getArgs _ _ = []
 getBoundsInfo _ _ = error "No es un fix"
 
--- Hacer esto
-rewriteFixBody :: Int -> [Int] -> [Int] -> TTerm -> TTerm
-rewriteFixBody argsC pc boundC b = b
+deleteParams :: Int -> Int -> [Int] -> [Int] -> Int -> TTerm -> TTerm
+deleteParams d argsC boundD boundC i (App p t u) = if elem i boundD then deleteParams d argsC boundD boundC (i-1) t else App p (deleteParams d argsC boundD boundC (i-1) t) (rewriteFixBody d argsC boundD boundC u)
+deleteParams d argsC boundD boundC i t = rewriteFixBody d argsC boundD boundC t
+
+-- depth -> argsCount -> argsBorrado -> arrayNuevosIndices -> Termino viejo -> Termino nuevo
+rewriteFixBody :: Int -> Int -> [Int] -> [Int] -> TTerm -> TTerm
+rewriteFixBody d argsC boundD boundC b@(V p (Bound i)) = if (i >= d && (i-d) <= argsC) then V p (Bound (boundC !! ((i-d)))) else b
+rewriteFixBody _ _ _ _ b@(V _ _) = b
+rewriteFixBody _ _ _ _ b@(Const _ _) = b
+rewriteFixBody d argsC boundD boundC (Lam p n ty (Sc1 t)) = Lam p n ty (Sc1 (rewriteFixBody (d+1) argsC boundD boundC t))
+rewriteFixBody d argsC boundD boundC app@(App p t u) = 
+  if isAppNBound (argsC+d) app
+  then deleteParams d argsC boundD boundC argsC app 
+  else App p (rewriteFixBody d argsC boundD boundC t) (rewriteFixBody d argsC boundD boundC u)
+rewriteFixBody d argsC boundD boundC (Print p str t) = Print p str (rewriteFixBody d argsC boundD boundC t)
+rewriteFixBody d argsC boundD boundC (BinaryOp p bop t u) = BinaryOp p bop (rewriteFixBody d argsC boundD boundC t) (rewriteFixBody d argsC boundD boundC u)
+rewriteFixBody d argsC boundD boundC (Fix p fn fty n ty (Sc2 t)) = Fix p fn fty n ty (Sc2 (rewriteFixBody (d+2) argsC boundD boundC t))
+rewriteFixBody d argsC boundD boundC (IfZ p c t u) = IfZ p (rewriteFixBody d argsC boundD boundC c) (rewriteFixBody d argsC boundD boundC t) (rewriteFixBody d argsC boundD boundC u)
+rewriteFixBody d argsC boundD boundC (Let p n ty def (Sc1 t)) = Let p n ty (rewriteFixBody d argsC boundD boundC def) (Sc1 (rewriteFixBody (d+1) argsC boundD boundC t))
 
 fixType :: Int -> Int -> [Int] -> Ty -> Ty
 fixType argsC n pc ty@(FunTy t1 t2 name) = 
@@ -254,10 +270,10 @@ fixType _ _ _ ty = ty
 rewriteFixAux :: Int -> [Int] -> [(Int, BType, Name, Ty)] -> [Int] -> TTerm -> TTerm
 rewriteFixAux argsC pc ((_, AB, n, ty):funInfo) inds fixB = Lam (NoPos, NatTy Nothing) n ty (Sc1 (rewriteFixAux argsC pc funInfo inds fixB))
 rewriteFixAux argsC pc ((_, FB, fn, fty):((_, AB, n, ty):funInfo)) inds fixB = Fix (NoPos, NatTy Nothing) fn (fixType argsC 0 pc fty) n ty (Sc2 (rewriteFixAux argsC pc funInfo inds fixB))
-rewriteFixAux argsC pc [] inds fixB = rewriteFixBody argsC pc inds fixB
+rewriteFixAux argsC pc [] inds fixB = rewriteFixBody 0 argsC pc inds fixB
 rewriteFixAux _ _ _ _ _ = error "No deberia llegar a aca"
 
-rewriteFix :: MonadFD4 m => Int -> [Int] -> TTerm -> m TTerm
+rewriteFix :: Int -> [Int] -> TTerm -> TTerm
 rewriteFix argsC pc t = let (fixD, argsD) = getBoundsInfo argsC t
                             ls = reverse (map (\i -> (argsD !! i)) pc)
                             le = reverse (argsD \\ ls)
@@ -266,37 +282,52 @@ rewriteFix argsC pc t = let (fixD, argsD) = getBoundsInfo argsC t
                             indexes = map (\i -> case elemIndex i indexesAux of 
                                                     Just e -> e
                                                     Nothing -> error "No deberia pasar") [0 .. argsC]
-                            help = rewriteFixAux argsC pc no indexes (getFixBody t)
-                        in do printFD4 ("HELP  " ++ (show help))
-                              return t
+                        in rewriteFixAux argsC pc no indexes (getFixBody t)
+
+buildApp :: [TTerm] -> TTerm -> TTerm
+buildApp [] fix = fix
+buildApp (x:xs) fix = App (NoPos, NatTy Nothing) (buildApp xs fix) x
 
 inlineExpansionForFix :: MonadFD4 m => TTerm -> m TTerm
 inlineExpansionForFix app@(App p t u) = 
   let (fix, params) = getFixAndParams app 
-      argsCount = getArgsCount fix
-  in do
-    if (length params) /= argsCount 
+      argsC = getArgsCount fix
+  in 
+    do 
+    fixOpt <- optimizeTermFull fix
+    if (length params) /= argsC 
     then do t' <- inlineExpansion t -- Caso fix sin aplicar completamente
             u' <- inlineExpansion u
             return $ App p t' u'
     else 
-      let ncp = sort $ getNoChangingParams argsCount (getFixBody fix) 
-      in if length ncp == 0 ||  length ncp == argsCount
+      let ncp = sort $ getNoChangingParams argsC (getFixBody fixOpt) 
+      in if length ncp == 0 ||  length ncp == argsC
          then do 
                 t' <- inlineExpansion t
                 u' <- inlineExpansion u
                 return $ App p t' u'
-         else do 
-                fix' <- rewriteFix argsCount ncp fix
-                t' <- inlineExpansion t -- Cambiar esto
-                u' <- inlineExpansion u
-                return $ App p t' u'
+         else 
+              let fix' = rewriteFix argsC ncp fixOpt
+                  rParams = reverse params
+                  npInit = reverse (map (\i -> (rParams !! i)) ncp)
+                  npTail = reverse [x | (x, i) <- zip rParams [0..], not (i `elem` ncp)]
+                  app' = buildApp (reverse (npInit ++ npTail)) fix'
+              in return $ app'
 inlineExpansionForFix _ = failFD4 "No se puede hacer inline Expansion Fix de algo que no es un fix"
 
 optimizeDecl :: MonadFD4 m  => Decl TTerm -> m (Decl TTerm)
 optimizeDecl (Decl p n ty t) = do
                                   t' <- optimizeTerm t 100
                                   return (Decl p n ty t')
+
+optimizeTermFull :: MonadFD4 m  => TTerm -> m (TTerm)
+optimizeTermFull t = do 
+                    t1 <- inlineExpansion t
+                    t2 <- constantFolding t1
+                    t3 <- deadCodeElimination t2
+                    if treeChanged t t3 
+                      then optimizeTermFull t3
+                      else return t3
 
 optimizeTerm :: MonadFD4 m  => TTerm -> Int -> m (TTerm)
 optimizeTerm t n = do 
