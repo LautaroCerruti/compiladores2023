@@ -315,10 +315,6 @@ inlineExpansionForFix app@(App p t u) =
   let (fix, params) = getFixAndParams app 
       argsC = getArgsCount fix
   in 
-    do 
-    -- fixOpt <- optimizeTermFull fix
-    -- printFD4 ("AAAAAA " ++ (show (checkPartialApps 0 argsC (getFixBody fix))))
-    -- printFD4 ("BBBBBB " ++ (show (getFixBody fix)))
     if (length params) /= argsC || checkPartialApps 0 argsC (getFixBody fix) 
     then do t' <- inlineExpansion t -- Caso fix sin aplicar completamente
             u' <- inlineExpansion u
@@ -343,15 +339,6 @@ optimizeDecl :: MonadFD4 m  => Decl TTerm -> m (Decl TTerm)
 optimizeDecl (Decl p n ty t) = do
                                   t' <- optimizeTerm t 100
                                   return (Decl p n ty t')
-
-optimizeTermFull :: MonadFD4 m  => TTerm -> m (TTerm)
-optimizeTermFull t = do 
-                    t1 <- inlineExpansion t
-                    t2 <- constantFolding t1
-                    t3 <- deadCodeElimination t2
-                    if treeChanged t t3 
-                      then optimizeTermFull t3
-                      else return t3
 
 optimizeTerm :: MonadFD4 m  => TTerm -> Int -> m (TTerm)
 optimizeTerm t n = do 
