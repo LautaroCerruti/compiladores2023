@@ -198,10 +198,10 @@ getFixBody (Fix _ _ _ _ _ (Sc2 t)) = getFixBody t
 getFixBody (Lam _ _ _ (Sc1 t)) = getFixBody t
 getFixBody t = t
 
-getChangingParamsInApp :: Int -> TTerm -> [Int]
-getChangingParamsInApp n (App _ f (V _ (Bound i))) = if n == i then getChangingParamsInApp (n+1) f else n : (getChangingParamsInApp (n-1) f)
-getChangingParamsInApp n (App _ f _) = n : (getChangingParamsInApp (n+1) f)
-getChangingParamsInApp _ _ = [] 
+getChangingParamsInApp :: Int -> Int -> TTerm -> [Int]
+getChangingParamsInApp d n (App _ f (V _ (Bound i))) = if (d+n) == i then getChangingParamsInApp d (n+1) f else n : (getChangingParamsInApp d (n+1) f)
+getChangingParamsInApp d n (App _ f _) = n : (getChangingParamsInApp d (n+1) f)
+getChangingParamsInApp _ _ _ = [] 
 
 applyGetChangingParamsToApp :: Int -> Int -> TTerm -> [Int]
 applyGetChangingParamsToApp argsCount depth (App _ t u) = union (getChangingParams argsCount depth u) (applyGetChangingParamsToApp argsCount depth t)
@@ -213,7 +213,7 @@ getChangingParams _ _ (Const _ _) = []
 getChangingParams argsCount depth (Lam _ _ _ (Sc1 t)) = getChangingParams argsCount (depth+1) t
 getChangingParams argsCount depth app@(App _ t u) = 
   if isAppNBound (argsCount+depth) app
-  then union (getChangingParamsInApp depth app) (applyGetChangingParamsToApp argsCount depth app)
+  then union (getChangingParamsInApp depth 0 app) (applyGetChangingParamsToApp argsCount depth app)
   else union (getChangingParams argsCount depth t) (getChangingParams argsCount depth u)
 getChangingParams argsCount depth (Print _ _ t) = getChangingParams argsCount depth t
 getChangingParams argsCount depth (BinaryOp _ _ t u) = union (getChangingParams argsCount depth t) (getChangingParams argsCount depth u)
@@ -237,18 +237,18 @@ getBoundsInfo argsC (Fix inf fn fty an aty (Sc2 t)) = ((argsC, FB, fn, fty), get
 getBoundsInfo _ _ = error "No es un fix"
 
 deleteParams :: Int -> Int -> [Int] -> [Int] -> Int -> TTerm -> TTerm
-deleteParams d argsC boundD boundC i (App p t u) = if elem i boundD then deleteParams d argsC boundD boundC (i-1) t else App p (deleteParams d argsC boundD boundC (i-1) t) (rewriteFixBody d argsC boundD boundC u)
+deleteParams d argsC boundD boundC i (App p t u) = if elem i boundD then deleteParams d argsC boundD boundC (i+1) t else App p (deleteParams d argsC boundD boundC (i+1) t) (rewriteFixBody d argsC boundD boundC u)
 deleteParams d argsC boundD boundC i t = rewriteFixBody d argsC boundD boundC t
 
 -- depth -> argsCount -> argsBorrado -> arrayNuevosIndices -> Termino viejo -> Termino nuevo
 rewriteFixBody :: Int -> Int -> [Int] -> [Int] -> TTerm -> TTerm
-rewriteFixBody d argsC boundD boundC b@(V p (Bound i)) = if (i >= d && (i-d) <= argsC) then V p (Bound (boundC !! ((i-d)))) else b
+rewriteFixBody d argsC boundD boundC b@(V p (Bound i)) = if (i >= d && (i-d) <= argsC) then V p (Bound ((boundC !! ((i-d)))+d)) else b
 rewriteFixBody _ _ _ _ b@(V _ _) = b
 rewriteFixBody _ _ _ _ b@(Const _ _) = b
 rewriteFixBody d argsC boundD boundC (Lam p n ty (Sc1 t)) = Lam p n ty (Sc1 (rewriteFixBody (d+1) argsC boundD boundC t))
 rewriteFixBody d argsC boundD boundC app@(App p t u) = 
   if isAppNBound (argsC+d) app
-  then deleteParams d argsC boundD boundC argsC app 
+  then deleteParams d argsC boundD boundC 0 app 
   else App p (rewriteFixBody d argsC boundD boundC t) (rewriteFixBody d argsC boundD boundC u)
 rewriteFixBody d argsC boundD boundC (Print p str t) = Print p str (rewriteFixBody d argsC boundD boundC t)
 rewriteFixBody d argsC boundD boundC (BinaryOp p bop t u) = BinaryOp p bop (rewriteFixBody d argsC boundD boundC t) (rewriteFixBody d argsC boundD boundC u)
@@ -273,7 +273,7 @@ rewriteFixAux argsC pc ((_, FB, fn, fty):((_, AB, n, ty):funInfo)) inds fixB = F
 rewriteFixAux argsC pc [] inds fixB = rewriteFixBody 0 argsC pc inds fixB
 rewriteFixAux _ _ _ _ _ = error "No deberia llegar a aca"
 
-rewriteFix :: Int -> [Int] -> TTerm -> TTerm
+rewriteFix :: MonadFD4 m => Int -> [Int] -> TTerm -> m TTerm
 rewriteFix argsC pc t = let (fixD, argsD) = getBoundsInfo argsC t
                             ls = reverse (map (\i -> (argsD !! i)) pc)
                             le = reverse (argsD \\ ls)
@@ -282,11 +282,33 @@ rewriteFix argsC pc t = let (fixD, argsD) = getBoundsInfo argsC t
                             indexes = map (\i -> case elemIndex i indexesAux of 
                                                     Just e -> e
                                                     Nothing -> error "No deberia pasar") [0 .. argsC]
-                        in rewriteFixAux argsC pc no indexes (getFixBody t)
+                        in do return $ rewriteFixAux argsC pc no indexes (getFixBody t)
 
 buildApp :: [TTerm] -> TTerm -> TTerm
 buildApp [] fix = fix
 buildApp (x:xs) fix = App (NoPos, NatTy Nothing) (buildApp xs fix) x
+
+countArgs :: TTerm -> Int
+countArgs (App _ t _) = 1 + countArgs t
+countArgs _ = 0
+
+applyCheckPartial2App :: Int -> Int -> TTerm -> Bool
+applyCheckPartial2App d argsC (App p t u) = (applyCheckPartial2App d argsC t) || checkPartialApps d argsC u
+applyCheckPartial2App _ _ _ = False
+
+checkPartialApps :: Int -> Int -> TTerm -> Bool
+checkPartialApps d argsC app@(App p t u) = 
+  if isAppNBound (d+argsC) app 
+  then countArgs app /= argsC || (applyCheckPartial2App d argsC app)
+  else (checkPartialApps d argsC t) || (checkPartialApps d argsC u)
+checkPartialApps d argsC (Lam _ _ _ (Sc1 t)) = checkPartialApps (d+1) argsC t
+checkPartialApps d argsC (Print _ _ t) = checkPartialApps d argsC t
+checkPartialApps d argsC (BinaryOp _ _ t u) = (checkPartialApps d argsC t) || (checkPartialApps d argsC u)
+checkPartialApps d argsC (Fix _ _ _ _ _ (Sc2 t)) = checkPartialApps (d+2) argsC t
+checkPartialApps d argsC (IfZ _ c t u) = (checkPartialApps d argsC c) || (checkPartialApps d argsC t) || (checkPartialApps d argsC u)
+checkPartialApps d argsC (Let _ _ _ def (Sc1 t)) = (checkPartialApps d argsC def) || (checkPartialApps (d+1) argsC t)
+checkPartialApps d argsC (V _ (Bound i)) = (d+argsC) == i
+checkPartialApps _ _ _ = False
 
 inlineExpansionForFix :: MonadFD4 m => TTerm -> m TTerm
 inlineExpansionForFix app@(App p t u) = 
@@ -294,25 +316,27 @@ inlineExpansionForFix app@(App p t u) =
       argsC = getArgsCount fix
   in 
     do 
-    fixOpt <- optimizeTermFull fix
-    if (length params) /= argsC 
+    -- fixOpt <- optimizeTermFull fix
+    -- printFD4 ("AAAAAA " ++ (show (checkPartialApps 0 argsC (getFixBody fix))))
+    -- printFD4 ("BBBBBB " ++ (show (getFixBody fix)))
+    if (length params) /= argsC || checkPartialApps 0 argsC (getFixBody fix) 
     then do t' <- inlineExpansion t -- Caso fix sin aplicar completamente
             u' <- inlineExpansion u
             return $ App p t' u'
     else 
-      let ncp = sort $ getNoChangingParams argsC (getFixBody fixOpt) 
+      let ncp = sort $ getNoChangingParams argsC (getFixBody fix) 
       in if length ncp == 0 ||  length ncp == argsC
          then do 
                 t' <- inlineExpansion t
                 u' <- inlineExpansion u
                 return $ App p t' u'
-         else 
-              let fix' = rewriteFix argsC ncp fixOpt
-                  rParams = reverse params
+         else do 
+              fix' <- rewriteFix argsC ncp fix
+              let rParams = reverse params
                   npInit = reverse (map (\i -> (rParams !! i)) ncp)
                   npTail = reverse [x | (x, i) <- zip rParams [0..], not (i `elem` ncp)]
                   app' = buildApp (reverse (npInit ++ npTail)) fix'
-              in return $ app'
+              return $ app'
 inlineExpansionForFix _ = failFD4 "No se puede hacer inline Expansion Fix de algo que no es un fix"
 
 optimizeDecl :: MonadFD4 m  => Decl TTerm -> m (Decl TTerm)
