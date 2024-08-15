@@ -15,7 +15,6 @@ module Main where
 import System.Console.Haskeline ( defaultSettings, getInputLine, runInputT, InputT )
 import Control.Monad.Catch (MonadMask)
 
---import Control.Monad
 import Control.Monad.Trans
 import Data.List (nub, isPrefixOf, intercalate )
 import Data.Char ( isSpace )
