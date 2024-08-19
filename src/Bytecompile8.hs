@@ -231,9 +231,9 @@ bc2string = map (chr . fromIntegral)
 
 int2bc :: Int -> Bytecode8
 int2bc n = let n1 = n
-               n2 = (shiftR n 8) -- Revisar .&. 0xFF
-               n3 = (shiftR n 16)
-               n4 = (shiftR n 24)
+               n2 = (shiftR n 8)
+               n3 = (shiftR n2 8)
+               n4 = (shiftR n3 8)
             in map fromIntegral [n1, n2, n3, n4]
 
 bc2int :: Bytecode8 -> Int
@@ -319,7 +319,7 @@ runMacchina (ADD : c) e ((I n) : (I m) : s) = runMacchina c e ((I (semOp Add m n
 runMacchina (SUB : c) e ((I n) : (I m) : s) = runMacchina c e ((I (semOp Sub m n)) : s)
 runMacchina (ACCESS : c) e s = runMacchina (drop 4 c) e ((e!!(bc2int (take 4 c))) : s) 
 runMacchina (CALL : c) e (v : (Fun ef cf) : s) = runMacchina cf (v : ef) ((RA e c) : s) 
-runMacchina (FUNCTION : c) e s = runMacchina (drop ((bc2int (take 4 c)) + 4) c) e ((Fun e (drop 4 c)) : s) 
+runMacchina (FUNCTION : c) e s = runMacchina (drop ((bc2int (take 4 c)) + 4) c) e ((Fun e (drop 4 c)) : s) -- como en el pattern matching no tomamos el tamaño de la funcion al salto hay que sumarle 4
 runMacchina (RETURN : _) _ (v : (RA e c) : s) = runMacchina c e (v : s) 
 runMacchina (TAILCALL : _) _ (v : (Fun ef cf) : s) = runMacchina cf (v : ef) s 
 runMacchina (SHIFT : c) e (v : s) = runMacchina c (v : e) s 
@@ -332,9 +332,9 @@ runMacchina (PRINT : c) e s = let (msg,_:rest) = span (/=NULL) c
                                     printInlineFD4 $ bc2string msg
                                     runMacchina rest e s 
 runMacchina (CJUMP : c) e ((I z) : s) = if z == 0 then runMacchina (drop 4 c) e s 
-                                                        else runMacchina (drop ((bc2int (take 4 c)) + 4) c) e s 
-runMacchina (JUMP : c) e s = runMacchina (drop ((bc2int (take 4 c)) + 4) c) e s 
+                                                        else runMacchina (drop ((bc2int (take 4 c)) + 4) c) e s -- como en el pattern matching no tomamos el tamaño de la rama del ifz, al salto hay que sumarle 4
+runMacchina (JUMP : c) e s = runMacchina (drop ((bc2int (take 4 c)) + 4) c) e s -- lo mismo que en CJUMP
 runMacchina (FIX : c) e ((Fun ef cf) : s) = let efix = (Fun efix cf) : e 
                                               in runMacchina c e ((Fun efix cf) : s) 
 runMacchina (STOP : _) _ _ = return ()
-runMacchina c e s = failFD4 $ "Makima perdio el control con " ++ (showBC8 c) ++ " y tope de la pila" ++ (show (head s))
+runMacchina c e s = failFD4 $ "Makima perdio el control con " ++ (showBC8 c)
