@@ -204,6 +204,13 @@ bct t = do bc <- bcc t
            return $ bc ++ [RETURN]
 
 bcs :: MonadFD4 m => TTerm -> m Bytecode
+bcs (App _ t1 t2) = do 
+                      b1 <- bcs t1
+                      b2 <- bcc t2
+                      return $ b1 ++ b2 ++ [CALL]
+bcs (Lam _ _ _ (Sc1 t)) = do 
+                            b <- bcs t
+                            return $ [FUNCTION, length b+1] ++ b ++ [STOP]
 bcs (Let _ _ _ t1 (Sc1 t2)) 
   | usesLetInBody t2 = do 
                         b1 <- bcc t1
@@ -212,7 +219,7 @@ bcs (Let _ _ _ t1 (Sc1 t2))
   | otherwise = do 
                   b1 <- bcc t1
                   b2 <- bcs (shiftIndexes t2)
-                  return $ b1 ++ [SHIFT, DROP] ++ b2
+                  return $ b1 ++ [SHIFT, DROP] ++ b2 -- podriamos evitar las 2 instrucciones si agregaramos una instruccion nueva que elimine el primer elemento de la pila
 bcs (IfZ _ c t1 t2) = do
                         bc <- bcc c
                         b1 <- bcs t1

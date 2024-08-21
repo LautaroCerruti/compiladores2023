@@ -205,6 +205,13 @@ bct t = do bc <- bcc t
            return $ bc ++ [RETURN]
 
 bcs :: MonadFD4 m => TTerm -> m Bytecode8
+bcs (App _ t1 t2) = do 
+                      b1 <- bcs t1
+                      b2 <- bcc t2
+                      return $ b1 ++ b2 ++ [CALL]
+bcs (Lam _ _ _ (Sc1 t)) = do 
+                            b <- bcs t
+                            return $ [FUNCTION] ++ int2bc (1 + length b) ++ b ++ [STOP]
 bcs (Let _ _ _ t1 (Sc1 t2)) 
   | usesLetInBody t2 = do 
                         b1 <- bcc t1
