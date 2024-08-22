@@ -34,9 +34,9 @@ module MonadFD4 (
   getProf,
   addStep,
   getProfMaxStack,
-  getProfClousureCount,
+  getProfClosureCount,
   getProfStep,
-  addClousureCount,
+  addClosureCount,
   checkMaxStack,
   eraseLastFileDecls,
   failPosFD4,
@@ -115,8 +115,8 @@ getProfStep = do
                 s <- get
                 return $ (\(a,_,_,_) -> a) $ profilerState s 
 
-getProfClousureCount :: MonadFD4 m => m Int
-getProfClousureCount = do
+getProfClosureCount :: MonadFD4 m => m Int
+getProfClosureCount = do
                           s <- get
                           return $ (\(_,_,_,d) -> d) $ profilerState s 
 
@@ -170,8 +170,8 @@ addStep = modify (\s -> s { profilerState = (\(a,b,c,d) -> (a+1,b,c,d)) (profile
 checkMaxStack :: MonadFD4 m => (Int -> Int) -> m ()
 checkMaxStack f = modify (\s -> s { profilerState = (\(a,b,c,d) -> let sa = f b in (a,sa,max c sa,d)) (profilerState s)})
 
-addClousureCount :: MonadFD4 m => m ()
-addClousureCount = modify (\s -> s { profilerState = (\(a,b,c,d) -> (a,b,c,d+1)) (profilerState s)})
+addClosureCount :: MonadFD4 m => m ()
+addClosureCount = modify (\s -> s { profilerState = (\(a,b,c,d) -> (a,b,c,d+1)) (profilerState s)})
 
 ---
 -- Importante, no eta-expandir porque GHC no hace una

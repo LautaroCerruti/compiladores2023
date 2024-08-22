@@ -268,41 +268,47 @@ bcRead filename = (map fromIntegral <$> un32) . decode <$> BS.readFile filename
 runBC :: MonadFD4 m => Bytecode -> m ()
 runBC bc = do 
             p <- getProf
-            if p then runMacchinaProf bc [] [] id else runMacchina bc [] []
+            if p then runMacchinaProf bc [] [] else runMacchina bc [] []
 
-runMacchinaProf :: MonadFD4 m => Bytecode -> Env -> [Val] -> (Int -> Int) -> m ()
-runMacchinaProf btc env stack f = do 
-                                addStep
-                                checkMaxStack f
-                                runMacchina' btc env stack
-                    where 
-                          plus1 = \c -> c+1
-                          minus1 = \c -> c-1
-                          minus2 = \c -> c-2
-                          runMacchina' (CONST : n : c) e s = runMacchinaProf c e ((I n) : s) plus1
-                          runMacchina' (ADD : c) e ((I n) : (I m) : s) = runMacchinaProf c e ((I (semOp Add m n)) : s) minus1
-                          runMacchina' (SUB : c) e ((I n) : (I m) : s) = runMacchinaProf c e ((I (semOp Sub m n)) : s) minus1
-                          runMacchina' (ACCESS : i : c) e s = runMacchinaProf c e ((e!!i) : s) plus1
-                          runMacchina' (CALL : c) e (v : (Fun ef cf) : s) = runMacchinaProf cf (v : ef) ((RA e c) : s) minus1
-                          runMacchina' (FUNCTION : l : c) e s = addClousureCount >>= \_ -> runMacchinaProf (drop l c) e ((Fun e c) : s) plus1
-                          runMacchina' (RETURN : _) _ (v : (RA e c) : s) = runMacchinaProf c e (v : s) minus1
-                          runMacchina' (TAILCALL : _) _ (v : (Fun ef cf) : s) = runMacchinaProf cf (v : ef) s minus2
-                          runMacchina' (SHIFT : c) e (v : s) = runMacchinaProf c (v : e) s minus1
-                          runMacchina' (DROP : c) (v : e) s = runMacchinaProf c e s id
-                          runMacchina' (PRINTN : c) e a@((I n) : s) = do 
-                                                                        printFD4 (show n)
-                                                                        runMacchinaProf c e a id
-                          runMacchina' (PRINT : c) e s = let (msg,_:rest) = span (/=NULL) c
-                                                        in do
-                                                              printInlineFD4 $ bc2string msg
-                                                              runMacchinaProf rest e s id
-                          runMacchina' (CJUMP : l1 : c) e ((I z) : s) = if z == 0 then runMacchinaProf c e s minus1
-                                                                                  else runMacchinaProf (drop l1 c) e s minus1
-                          runMacchina' (JUMP : l : c) e s = runMacchinaProf (drop l c) e s id
-                          runMacchina' (FIX : c) e ((Fun ef cf) : s) = let efix = (Fun efix cf) : e 
-                                                                        in runMacchinaProf c e ((Fun efix cf) : s) id
-                          runMacchina' (STOP : _) _ _ = return ()
-                          runMacchina' c e s = failFD4 $ "Makima perdio el control con " ++ (showBC c)
+plus1 :: Int -> Int
+plus1 = \c -> c+1
+
+minus1 :: Int -> Int
+minus1 = \c -> c-1
+
+minus2 :: Int -> Int
+minus2 = \c -> c-2
+
+profStep :: MonadFD4 m => (Int -> Int) -> m ()
+profStep f = addStep >>= \_ -> checkMaxStack f
+
+runMacchinaProf :: MonadFD4 m => Bytecode -> Env -> [Val] -> m ()
+runMacchinaProf (CONST : n : c) e s = profStep plus1 >>= \_ -> runMacchinaProf c e ((I n) : s) 
+runMacchinaProf (ADD : c) e ((I n) : (I m) : s) = profStep minus1 >>= \_ -> runMacchinaProf c e ((I (semOp Add m n)) : s)
+runMacchinaProf (SUB : c) e ((I n) : (I m) : s) = profStep minus1 >>= \_ -> runMacchinaProf c e ((I (semOp Sub m n)) : s) 
+runMacchinaProf (ACCESS : i : c) e s = profStep plus1 >>= \_ -> runMacchinaProf c e ((e!!i) : s)
+runMacchinaProf (CALL : c) e (v : (Fun ef cf) : s) = profStep minus1 >>= \_ -> runMacchinaProf cf (v : ef) ((RA e c) : s) 
+runMacchinaProf (FUNCTION : l : c) e s = profStep plus1 >>= \_ -> addClosureCount >>= \_ -> runMacchinaProf (drop l c) e ((Fun e c) : s) 
+runMacchinaProf (RETURN : _) _ (v : (RA e c) : s) = profStep minus1 >>= \_ -> runMacchinaProf c e (v : s) 
+runMacchinaProf (TAILCALL : _) _ (v : (Fun ef cf) : s) = profStep minus2 >>= \_ -> runMacchinaProf cf (v : ef) s 
+runMacchinaProf (SHIFT : c) e (v : s) = profStep minus1 >>= \_ -> runMacchinaProf c (v : e) s 
+runMacchinaProf (DROP : c) (v : e) s = profStep id >>= \_ -> runMacchinaProf c e s 
+runMacchinaProf (PRINTN : c) e a@((I n) : s) = do 
+                                              profStep id
+                                              printFD4 (show n)
+                                              runMacchinaProf c e a 
+runMacchinaProf (PRINT : c) e s = let (msg,_:rest) = span (/=NULL) c
+                              in do
+                                    profStep id
+                                    printInlineFD4 $ bc2string msg
+                                    runMacchinaProf rest e s 
+runMacchinaProf (CJUMP : l1 : c) e ((I z) : s) = if z == 0 then profStep minus1 >>= \_ -> runMacchinaProf c e s 
+                                                        else profStep minus1 >>= \_ -> runMacchinaProf (drop l1 c) e s 
+runMacchinaProf (JUMP : l : c) e s = profStep id >>= \_ -> runMacchinaProf (drop l c) e s 
+runMacchinaProf (FIX : c) e ((Fun ef cf) : s) = let efix = (Fun efix cf) : e 
+                                              in profStep id >>= \_ -> runMacchinaProf c e ((Fun efix cf) : s) 
+runMacchinaProf (STOP : _) _ _ = profStep id >>= \_ -> return ()
+runMacchinaProf c e s = failFD4 $ "Makima perdio el control con " ++ (showBC c)
 
 runMacchina :: MonadFD4 m => Bytecode -> Env -> [Val] -> m ()
 runMacchina (CONST : n : c) e s = runMacchina c e ((I n) : s) 

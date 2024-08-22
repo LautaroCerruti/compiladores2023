@@ -201,7 +201,7 @@ runVM f = do
                               printFD4 $ "Cantidad de pasos VM: " ++ (show s)
                               ss <- getProfMaxStack
                               printFD4 $ "Tamaño maximo del stack: " ++ (show ss)
-                              c <- getProfClousureCount
+                              c <- getProfClosureCount
                               printFD4 $ "Cantidad de clausuras realizadas: " ++ (show c)
                       else return ()
             return ()

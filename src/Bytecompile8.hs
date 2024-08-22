@@ -284,41 +284,47 @@ bcRead8 filename = (map fromIntegral <$> un8) . decode <$> BS.readFile filename
 runBC8 :: MonadFD4 m => Bytecode8 -> m ()
 runBC8 bc = do 
             p <- getProf
-            if p then runMacchinaProf bc [] [] id else runMacchina bc [] []
+            if p then runMacchinaProf bc [] [] else runMacchina bc [] []
 
-runMacchinaProf :: MonadFD4 m => Bytecode8 -> Env -> [Val] -> (Int -> Int) -> m ()
-runMacchinaProf btc env stack f = do 
-                                addStep
-                                checkMaxStack f
-                                runMacchina' btc env stack
-                    where 
-                          plus1 = \c -> c+1
-                          minus1 = \c -> c-1
-                          minus2 = \c -> c-2
-                          runMacchina' (CONST : c) e s = runMacchinaProf (drop 4 c) e ((I (bc2int (take 4 c))) : s) plus1
-                          runMacchina' (ADD : c) e ((I n) : (I m) : s) = runMacchinaProf c e ((I (semOp Add m n)) : s) minus1
-                          runMacchina' (SUB : c) e ((I n) : (I m) : s) = runMacchinaProf c e ((I (semOp Sub m n)) : s) minus1
-                          runMacchina' (ACCESS : c) e s = runMacchinaProf (drop 4 c) e ((e!!(bc2int (take 4 c))) : s) plus1
-                          runMacchina' (CALL : c) e (v : (Fun ef cf) : s) = runMacchinaProf cf (v : ef) ((RA e c) : s) minus1
-                          runMacchina' (FUNCTION : c) e s = addClousureCount >>= \_ -> runMacchinaProf (drop ((bc2int (take 4 c)) + 4) c) e ((Fun e (drop 4 c)) : s) plus1
-                          runMacchina' (RETURN : _) _ (v : (RA e c) : s) = runMacchinaProf c e (v : s) minus1
-                          runMacchina' (TAILCALL : _) _ (v : (Fun ef cf) : s) = runMacchinaProf cf (v : ef) s minus2
-                          runMacchina' (SHIFT : c) e (v : s) = runMacchinaProf c (v : e) s minus1
-                          runMacchina' (DROP : c) (v : e) s = runMacchinaProf c e s id
-                          runMacchina' (PRINTN : c) e a@((I n) : s) = do 
-                                                                        printFD4 (show n)
-                                                                        runMacchinaProf c e a id
-                          runMacchina' (PRINT : c) e s = let (msg,_:rest) = span (/=NULL) c
-                                                        in do
-                                                              printInlineFD4 $ bc2string msg
-                                                              runMacchinaProf rest e s id
-                          runMacchina' (CJUMP : c) e ((I z) : s) = if z == 0 then runMacchinaProf (drop 4 c) e s minus1
-                                                                                  else runMacchinaProf (drop ((bc2int (take 4 c)) + 4) c) e s minus1
-                          runMacchina' (JUMP : c) e s = runMacchinaProf (drop ((bc2int (take 4 c)) + 4) c) e s id
-                          runMacchina' (FIX : c) e ((Fun ef cf) : s) = let efix = (Fun efix cf) : e 
-                                                                        in runMacchinaProf c e ((Fun efix cf) : s) id
-                          runMacchina' (STOP : _) _ _ = return ()
-                          runMacchina' c e s = failFD4 $ "Makima perdio el control con " ++ (showBC8 c) ++ " y tope de la pila" ++ (show (head s))
+plus1 :: Int -> Int
+plus1 = \c -> c+1
+
+minus1 :: Int -> Int
+minus1 = \c -> c-1
+
+minus2 :: Int -> Int
+minus2 = \c -> c-2
+
+profStep :: MonadFD4 m => (Int -> Int) -> m ()
+profStep f = addStep >>= \_ -> checkMaxStack f
+
+runMacchinaProf :: MonadFD4 m => Bytecode8 -> Env -> [Val] -> m ()
+runMacchinaProf (CONST : c) e s = profStep plus1 >>= \_ -> runMacchinaProf (drop 4 c) e ((I (bc2int (take 4 c))) : s) 
+runMacchinaProf (ADD : c) e ((I n) : (I m) : s) = profStep minus1 >>= \_ -> runMacchinaProf c e ((I (semOp Add m n)) : s)
+runMacchinaProf (SUB : c) e ((I n) : (I m) : s) = profStep minus1 >>= \_ -> runMacchinaProf c e ((I (semOp Sub m n)) : s) 
+runMacchinaProf (ACCESS : c) e s = profStep plus1 >>= \_ -> runMacchinaProf (drop 4 c) e ((e!!(bc2int (take 4 c))) : s)
+runMacchinaProf (CALL : c) e (v : (Fun ef cf) : s) = profStep minus1 >>= \_ -> runMacchinaProf cf (v : ef) ((RA e c) : s)
+runMacchinaProf (FUNCTION : c) e s = profStep plus1 >>= \_ -> addClosureCount >>= \_ -> runMacchinaProf (drop ((bc2int (take 4 c)) + 4) c) e ((Fun e (drop 4 c)) : s)
+runMacchinaProf (RETURN : _) _ (v : (RA e c) : s) = profStep minus1 >>= \_ -> runMacchinaProf c e (v : s)
+runMacchinaProf (TAILCALL : _) _ (v : (Fun ef cf) : s) = profStep minus2 >>= \_ -> runMacchinaProf cf (v : ef) s
+runMacchinaProf (SHIFT : c) e (v : s) = profStep minus1 >>= \_ -> runMacchinaProf c (v : e) s
+runMacchinaProf (DROP : c) (v : e) s = profStep id >>= \_ -> runMacchinaProf c e s 
+runMacchinaProf (PRINTN : c) e a@((I n) : s) = do 
+                                              profStep id
+                                              printFD4 (show n)
+                                              runMacchinaProf c e a 
+runMacchinaProf (PRINT : c) e s = let (msg,_:rest) = span (/=NULL) c
+                              in do
+                                    profStep id
+                                    printInlineFD4 $ bc2string msg
+                                    runMacchinaProf rest e s
+runMacchinaProf (CJUMP : c) e ((I z) : s) = if z == 0 then profStep minus1 >>= \_ -> runMacchinaProf (drop 4 c) e s
+                                                        else profStep minus1 >>= \_ -> runMacchinaProf (drop ((bc2int (take 4 c)) + 4) c) e s
+runMacchinaProf (JUMP : c) e s = profStep id >>= \_ -> runMacchinaProf (drop ((bc2int (take 4 c)) + 4) c) e s
+runMacchinaProf (FIX : c) e ((Fun ef cf) : s) = let efix = (Fun efix cf) : e 
+                                              in profStep id >>= \_ -> runMacchinaProf c e ((Fun efix cf) : s)
+runMacchinaProf (STOP : _) _ _ = profStep id >>= \_ -> return ()
+runMacchinaProf c e s = failFD4 $ "Makima perdio el control con " ++ (showBC8 c)
 
 runMacchina :: MonadFD4 m => Bytecode8 -> Env -> [Val] -> m ()
 runMacchina (CONST : c) e s = runMacchina (drop 4 c) e ((I (bc2int (take 4 c))) : s) 
