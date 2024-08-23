@@ -106,19 +106,11 @@ constantFolding (BinaryOp p op tf ts) = do t1' <- constantFolding tf
                                                                  constantFolding (BinaryOp p Sub t1 t4)
                 bopFold _ t1' t2'  = return (BinaryOp p op t1' t2')
 
-isFix :: TTerm -> Bool
-isFix (Fix _ _ _ _ _ _) = True
-isFix _ = False
-
+-- Funcion para saber si una aplicacion se trata de un fix
 appsForFix :: TTerm -> Bool
 appsForFix (App _ t _) = appsForFix t
 appsForFix (Fix _ _ _ _ _ _) = True
 appsForFix _ = False
-
-isAppNBound :: Int -> TTerm -> Bool
-isAppNBound n (App _ t _) = isAppNBound n t
-isAppNBound n (V _ (Bound bid)) = n == bid 
-isAppNBound _ _ = False
 
 inlineExpansion :: MonadFD4 m => TTerm -> m TTerm
 inlineExpansion (Let i n ty def sc@(Sc1 t)) = do 
@@ -178,16 +170,22 @@ inlineExpansion g@(V i (Global n)) = do
                                                     else return g
 inlineExpansion t = return t
 
-getFixAndParams :: TTerm -> (TTerm, [TTerm])
-getFixAndParams term = (getFix term, reverse $ getParams term)
-  where 
-        getFix f@(Fix _ _ _ _ _ _) = f
-        getFix (App _ t _) = getFix t
-        getFix _ = error "No es un Fix"
-        getParams (Fix _ _ _ _ _ _) = []
-        getParams (App _ t u) = u : (getParams t)
-        getParams _ = error "No es un Fix"
+-- Funcion para saber si una serie de apps corresponden al de un cierto bind
+-- Bind -> Term -> Bool
+isAppNBound :: Int -> TTerm -> Bool
+isAppNBound n (App _ t _) = isAppNBound n t
+isAppNBound n (V _ (Bound bind)) = n == bind 
+isAppNBound _ _ = False
 
+-- Funcion para obtener el Fix y los parametros de un Fix
+getFixAndParams :: TTerm -> (TTerm, [TTerm])
+getFixAndParams term = getFixAndParams' term []
+  where 
+        getFixAndParams' (App _ t u) acc = getFixAndParams' t (u:acc)
+        getFixAndParams' f@(Fix _ _ _ _ _ _) acc = (f, acc)
+        getFixAndParams' _ _ = error "No es un Fix"
+
+-- Funcion para obtener la cantidad de argumentos de un Fix
 getArgsCount :: TTerm -> Int
 getArgsCount (Fix _ _ _ _ _ (Sc2 t)) = 1 + getArgsCount t
 getArgsCount (Lam _ _ _ (Sc1 t)) = 1 + getArgsCount t
@@ -292,13 +290,17 @@ countArgs :: TTerm -> Int
 countArgs (App _ t _) = 1 + countArgs t
 countArgs _ = 0
 
+-- Funcion para chequear si en los arguementos de una aplicacion hay aplicaciones parciales
 applyCheckPartial2App :: Int -> Int -> TTerm -> Bool
 applyCheckPartial2App d argsC (App p t u) = (applyCheckPartial2App d argsC t) || checkPartialApps d argsC u
 applyCheckPartial2App _ _ _ = False
 
+-- Funcion para chequear si en el cuerpo (TODO el cuerpo) de un fix hay aplicaciones parciales
+-- depth -> argsCount -> term -> bool
+-- d+argsC es el indice del bind de la funcion recursiva
 checkPartialApps :: Int -> Int -> TTerm -> Bool
 checkPartialApps d argsC app@(App p t u) = 
-  if isAppNBound (d+argsC) app 
+  if isAppNBound (d+argsC) app  -- Chequeamos si es la aplicacion de la funcion recursiva
   then countArgs app /= argsC || (applyCheckPartial2App d argsC app)
   else (checkPartialApps d argsC t) || (checkPartialApps d argsC u)
 checkPartialApps d argsC (Lam _ _ _ (Sc1 t)) = checkPartialApps (d+1) argsC t
