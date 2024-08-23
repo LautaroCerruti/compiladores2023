@@ -86,31 +86,16 @@ main = execParser opts >>= go
               runOrFail (Conf opt prof Interactive) (runInputT defaultSettings (repl files))
     go (InteractiveCEK, opt, prof, files) =
               runOrFail (Conf opt prof InteractiveCEK) (runInputT defaultSettings (repl files))
-    go (RunVM, opt, True, files) = 
-              runOrFailProf (Conf opt True RunVM) $ mapM_ runVM files
     go (RunVM, opt, prof, files) =
               runOrFail (Conf opt prof RunVM) $ mapM_ runVM files
-    go (RunVM8, opt, True, files) = 
-              runOrFailProf (Conf opt True RunVM8) $ mapM_ runVM files
     go (RunVM8, opt, prof, files) =
               runOrFail (Conf opt prof RunVM8) $ mapM_ runVM files
-    go (CEK, opt, True, files) = 
-              runOrFailProf (Conf opt True CEK) $ mapM_ compileFile files
     go (m, opt, prof, files) =
               runOrFail (Conf opt prof m) $ mapM_ compileFile files
 
 runOrFail :: Conf -> FD4 a -> IO a
 runOrFail c m = do
   r <- runFD4 m c
-  case r of
-    Left err -> do
-      liftIO $ hPrint stderr err
-      exitWith (ExitFailure 1)
-    Right v -> return v
-
-runOrFailProf :: Conf -> FD4Prof a -> IO a
-runOrFailProf c m = do
-  r <- runFD4Prof m c
   case r of
     Left err -> do
       liftIO $ hPrint stderr err
@@ -179,7 +164,7 @@ compileFile f = do
                 p <- getProf
                 _ <- if p then do s <- getProfStep
                                   printFD4 $ "Cantidad de pasos CEK: " ++ (show s)
-                                        else return ()
+                          else return ()
                 setInter i
       CC -> do
               declsF <- mapM handleDecl decls
@@ -215,7 +200,7 @@ runVM f = do
                               printFD4 $ "Cantidad de pasos VM: " ++ (show s)
                               ss <- getProfMaxStack
                               printFD4 $ "Tamaño maximo del stack: " ++ (show ss)
-                              c <- getProfClousureCount
+                              c <- getProfClosureCount
                               printFD4 $ "Cantidad de clausuras realizadas: " ++ (show c)
                       else return ()
             return ()

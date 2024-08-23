@@ -345,6 +345,6 @@ optimizeTerm t n = do
                     t1 <- inlineExpansion t
                     t2 <- constantFolding t1
                     t3 <- deadCodeElimination t2
-                    if n > 1 && treeChanged t t3 
+                    if n >= 1 && treeChanged t t3 
                       then optimizeTerm t3 (n-1)
                       else return t3

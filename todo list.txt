@@ -1,6 +1,7 @@
 P3) Comparar ack 3 11 entre la macchina en haskell y C nativo
 P4) punto 7 y 8
 P5) 
+    - Agregar heuristica de expandir si solo se utiliza una única vez (sin importar el tamaño de termino)
     - ver si hacer CSE
 
 

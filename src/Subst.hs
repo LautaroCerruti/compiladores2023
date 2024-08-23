@@ -110,9 +110,15 @@ close2 nm1 nm2 t = Sc2 (varChanger lcl (\_ p i -> V p (Bound i)) t)
 shiftIndexes :: Tm info Var -> Tm info Var
 shiftIndexes = varChanger (\_ p x -> V p (Free x)) (\d p i -> if i >= d then V p (Bound (i-1)) else V p (Bound i))
 
+-- en esta funcion hacemos la sustitucion de un bind por su definicion, como esto se utiliza cuando eliminamos
+-- el bindeo a la vez que buscamos el indice a sustituir, aprovechamos para desplazar los indices de de bruijn 
+-- de los bindeos que sean anteriores al que estamos eliminando
+-- al momento de hacer la sustitucion del bind que buscamos, tenemos que corregir los indices dentro de la definicion
+-- para que sigan apuntando a los lugares correctos (en especial si dentro de m tuvimos que bajar a traves de Lams, Fixs o Lets), 
+-- esto lo hacemos sumandole depth a los indices 
 substWhileFixingIndexes :: Tm info Var -> Scope info Var -> Tm info Var
-substWhileFixingIndexes n (Sc1 m) = varChanger (\_ p n -> V p (Free n)) bnd m
+substWhileFixingIndexes n (Sc1 m) = varChanger (\_ p n' -> V p (Free n')) bnd m
    where bnd depth p i 
              | i <  depth = V p (Bound i)
-             | i == depth = varChanger (\_ p n -> V p (Free n)) (\d p i -> V p (Bound (i+depth))) n
+             | i == depth = varChanger (\_ p n' -> V p (Free n')) (\d p i -> V p (Bound (i+depth))) n
              | otherwise  = V p (Bound (i-1))

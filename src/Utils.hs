@@ -83,7 +83,7 @@ hasEffects (App _ t u) = do
                           tb <- hasEffects t 
                           ub <- hasEffects u
                           return (tb || ub)
-hasEffects (Fix _ _ _ _ _ (Sc2 t)) = return True
+hasEffects (Fix _ _ _ _ _ (Sc2 t)) = return True  -- un posible efecto es la divergecia y no podemos saber si un fix termina o no, por lo que tomamos como que es un efecto
 hasEffects (Let _ _ _ def (Sc1 t)) = do
                                         defb <- hasEffects def 
                                         tb <- hasEffects t

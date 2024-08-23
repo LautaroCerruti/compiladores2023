@@ -195,7 +195,7 @@ accept: $(patsubst %,%.accept,$(TESTS))
 	$(Q)$(EXE) $(EXTRAFLAGS) --cc $< >/dev/null
 
 %.exe: %.c 
-	$(Q)$(CC) $< runtime.c -lgc -o $@
+	$(Q)$(CC) $< -Wno-int-conversion -Wno-incompatible-pointer-types runtime.c -lgc -o $@
 
 # Correr bytecode para generar la salida (con VM en C).
 # Finalmente la comparación.

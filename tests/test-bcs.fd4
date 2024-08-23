@@ -1,0 +1,1 @@
+let a : Nat = (fun (x : Nat) -> (fun (x : Nat) -> ifz x then print "a" (x+1) else 0) x) 1
