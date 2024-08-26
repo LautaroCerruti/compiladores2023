@@ -15,7 +15,6 @@ module Main where
 import System.Console.Haskeline ( defaultSettings, getInputLine, runInputT, InputT )
 import Control.Monad.Catch (MonadMask)
 
---import Control.Monad
 import Control.Monad.Trans
 import Data.List (nub, isPrefixOf, intercalate )
 import Data.Char ( isSpace )
@@ -228,9 +227,10 @@ handleDecl d@(SDDecl _ _ _ _) = do
     case m of
       Typecheck -> do 
           td <- typecheckDecl d
-          addDecl td
+          -- addDecl td
           opt <- getOpt
           td' <- if opt then optimizeDecl td else return td
+          addDecl td'
           ppterm <- ppDecl td'
           printFD4 ppterm
           return Nothing

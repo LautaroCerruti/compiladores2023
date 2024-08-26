@@ -1,11 +1,12 @@
-let f (x:Nat) : Nat =
-    let u1 : Nat = x in
-    let x2 : Nat = x+1 in
-    let u2 : Nat = x2 in
-    let x3 : Nat = x2+1 in
-    let u3 : Nat = x3 in
-    let x4 : Nat = x3+1 in
-    let u4 : Nat = x4 in
-    print "AAAAAAAAAA" x
+let rec triang (w x y z:Nat) : Nat = 
+    ifz x then (ifz x then y else triang w x y (z-2)) else (fun (l : Nat) -> triang w x (y-1) z) 1
 
-let a : Nat = f 1
+let a : Nat = print "HOLA " (triang 1 2 1000 3)
+
+let rec aux (x y : Nat) : Nat = ifz y then print "E" x else ((fun (f : Nat -> Nat -> Nat) -> (fun (a b : Nat) -> f x (y-1))) aux) (1) (1)
+
+let b : Nat = (fix (aux: Nat->Nat->Nat) (x y :Nat) -> ifz y then print "E" x else ((fun (f : Nat -> Nat -> Nat) -> (fun (a b : Nat) -> f x (y-1))) aux) (1) (1)) 32 1
+
+let c : Nat = (fix (aux: Nat->Nat->Nat) (x y :Nat) -> (ifz x then aux x else (fun (z : Nat) -> z)) y) 0 1
+
+let d : Nat = (fix (aux: Nat->Nat->Nat) (x y :Nat) -> ((fun (f : Nat -> Nat -> Nat) -> (fun (a b : Nat) -> f x (y-1))) aux) 1 1) 32 1

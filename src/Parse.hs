@@ -16,7 +16,6 @@ import Prelude hiding ( const )
 import Lang hiding (getPos)
 import Common
 import Text.Parsec hiding (runP,parse)
---import Data.Char ( isNumber, ord )
 import qualified Text.Parsec.Token as Tok
 import Text.ParserCombinators.Parsec.Language --( GenLanguageDef(..), emptyDef )
 import qualified Text.Parsec.Expr as Ex
