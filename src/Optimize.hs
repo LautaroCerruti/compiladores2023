@@ -1,7 +1,7 @@
 module Optimize where
 
 import Lang
-import MonadFD4 ( MonadFD4, lookupDecl, failFD4, printFD4 )
+import MonadFD4 ( MonadFD4, lookupDecl, failFD4 )
 import Subst (subst, shiftIndexes, substWhileFixingIndexes)
 import Utils (semOp, usesLetInBody, treeChanged, hasEffects, termSize)
 import Common 
