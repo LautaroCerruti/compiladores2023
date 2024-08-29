@@ -183,7 +183,7 @@ accept: $(patsubst %,%.accept,$(TESTS))
 # suficiente.
 
 %.actual_out_eval_opt: % $(EXE)
-	$(Q)$(EXE) $(EXTRAFLAGS) --eval --optimize $< > $@
+	$(Q)$(EXE) --eval --optimize $< > $@
 
 %.check_eval_opt: %.out %.actual_out_eval_opt
 	$(Q)diff -u $^

@@ -153,7 +153,6 @@ freeVars tm = nubSort $ go tm [] where
 freeVarsT :: TTerm -> [(Name, Ty)]
 freeVarsT tm = go tm [] where
   go (V (_, ty) (Free   v)          ) xs = (v, ty) : xs
-  go (V (_, ty) (Global v)          ) xs = (v, ty) : xs
   go (V _ _                   ) xs = xs
   go (Lam _ _ _ (Sc1 t)       ) xs = go t xs
   go (App   _ l r             ) xs = go l $ go r xs
