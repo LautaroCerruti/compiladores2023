@@ -3,7 +3,7 @@ module Optimize where
 import Lang
 import MonadFD4 ( MonadFD4, lookupDecl, failFD4 )
 import Subst (subst, shiftIndexes, substWhileFixingIndexes)
-import Utils (semOp, usesLetInBody, treeChanged, hasEffects, termSize)
+import Utils (semOp, usesLetInBody, treeChanged, hasEffects, termSize, countUsesBind)
 import Common 
 import Global
 import Data.List
@@ -116,7 +116,8 @@ inlineExpansion :: MonadFD4 m => TTerm -> m TTerm
 inlineExpansion (Let i n ty def sc@(Sc1 t)) = do 
                                                 he <- hasEffects def
                                                 defs <- termSize def
-                                                if not he && defs < termSizeLimit
+                                                uses <- countUsesBind t
+                                                if not he && (defs < termSizeLimit || uses == 1)
                                                 then inlineExpansion $ substWhileFixingIndexes def sc
                                                 else do 
                                                         def' <- inlineExpansion def
@@ -125,7 +126,8 @@ inlineExpansion (Let i n ty def sc@(Sc1 t)) = do
 inlineExpansion (App p l@(Lam i n ty sc@(Sc1 t)) u) = do 
                                                   he <- hasEffects u
                                                   us <- termSize u
-                                                  if not he && us < termSizeLimit
+                                                  uses <- countUsesBind t
+                                                  if not he && (us < termSizeLimit || uses == 1)
                                                   then inlineExpansion $ substWhileFixingIndexes u sc
                                                   else do
                                                           t' <- inlineExpansion t

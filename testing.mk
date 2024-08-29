@@ -14,7 +14,7 @@ VM	:= ./vm/macc
 #CC := gcc runtime.c -lgc -o
 
 EXTRAFLAGS	:= 
-# EXTRAFLAGS	+= --optimize
+ EXTRAFLAGS	+= --optimize
 
 # Las reglas a chequear. Se puede deshabilitar toda una familia de tests
 # comentando una de estas líneas.
