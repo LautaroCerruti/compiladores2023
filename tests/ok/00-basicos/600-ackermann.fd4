@@ -1,0 +1,9 @@
+let rec ackermann (m n:Nat) : Nat = 
+    ifz m then n + 1 else (
+        ifz n then ackermann (m-1) (1) else ackermann (m-1) (ackermann m (n-1))
+    )
+
+let ack2350 : Nat = print "ackermann en 2 350 es " (ackermann 2 350)
+let ack35 : Nat = print "ackermann en 3 5 es " (ackermann 3 5)
+let ack37 : Nat = print "ackermann en 3 7 es " (ackermann 3 7)
+let ack40 : Nat = print "ackermann en 4 0 es " (ackermann 4 0)

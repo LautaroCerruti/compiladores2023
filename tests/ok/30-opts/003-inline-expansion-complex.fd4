@@ -1,0 +1,5 @@
+let b : Nat = (fix (aux: Nat->Nat->Nat) (x y :Nat) -> ifz y then print "x = " x else ((fun (f : Nat -> Nat -> Nat) -> (fun (a b : Nat) -> f x (y-1))) aux) 1 1) 32 5
+
+let c : Nat = (fix (aux: Nat->Nat->Nat) (x y :Nat) -> ifz y then print "y = " y else (ifz 0 then aux x else (fun (z : Nat) -> z)) (y-1)) 2000 50
+
+let d : Nat = (fix (aux: Nat->Nat->Nat) (x y :Nat) -> ((fun (f : Nat -> Nat -> Nat) -> (fun (a b : Nat) -> ifz y then print "a = " a else f x (y-1))) aux) 1 1) 32 1
