@@ -1,0 +1,14 @@
+Comparando la Macchina en haskell vs la Macchina en C podemos ver que la segunda utiliza 
+memoria constante (1.1MB) mientras que la version en Haskell nunca deja de aumentar hasta 
+dejar a la computadora sin recursos.
+
+La razon se debe a que en C solo se pide memoria para la pila cuando la misma se llena, 
+en este caso no ocurre nunca ya que los nuevos valores se insertan siempre pisando los anteriores. 
+En haskell cada vez que se quiere agregar un elemento a la pila se hace utilizando el sharing de las listas, 
+por lo que pide memoria para crear un nuevo nodo, como la funcion runMacchina esta definida de manera 
+recursiva el garbage collector nunca sabe que existen nodos que se puede eliminar ya que en las infinitas 
+llamadas recursivas siguen existiendo las referencias a estos nodos.
+
+Lo mismo ocurre con el entorno, la macchina en C esta definida con un while y esto permite que el GC 
+detecte que la memoria pedida en los push al environment deja de estar referenciada por lo que la libera, 
+en haskell la recursion imposibilita esto.

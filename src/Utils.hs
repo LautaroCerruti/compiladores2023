@@ -8,19 +8,6 @@ semOp :: BinaryOp -> Int -> Int -> Int
 semOp Add x y=  x + y
 semOp Sub x y = max 0 (x - y)
 
-usesLetInBody :: TTerm -> Bool
-usesLetInBody = usesLetInBody' 0
-  where
-    usesLetInBody' i (V _ (Bound i2)) = i == i2
-    usesLetInBody' i (BinaryOp _ _ t1 t2) = usesLetInBody' i t1 || usesLetInBody' i t2
-    usesLetInBody' i (App _ t1 t2) = usesLetInBody' i t1 || usesLetInBody' i t2
-    usesLetInBody' i (Lam _ _ _ (Sc1 t)) = usesLetInBody' (i+1) t
-    usesLetInBody' i (Let _ _ _ t1 (Sc1 t2)) = usesLetInBody' i t1 || usesLetInBody' (i+1) t2
-    usesLetInBody' i (Fix _ _ _ _ _ (Sc2 t)) = usesLetInBody' (i+2) t
-    usesLetInBody' i (IfZ _ c t1 t2) = usesLetInBody' i c || usesLetInBody' i t1 || usesLetInBody' i t2
-    usesLetInBody' i (Print _ _ t) = usesLetInBody' i t
-    usesLetInBody' _ _ = False
-
 treeChanged :: TTerm -> TTerm -> Bool
 treeChanged (V _ _) (V _ _) = False
 treeChanged (Const _ _) (Const _ _) = False
@@ -63,31 +50,22 @@ termSize (BinaryOp p op t1 t2) = do
                                       t2s <- termSize t2
                                       return (1 + t1s + t2s)
 
+countUsesBindAux :: Int -> TTerm -> Int
+countUsesBindAux n (V _ (Bound n')) = if n == n' then 1 else 0
+countUsesBindAux n (Print _ str t) = countUsesBindAux n t
+countUsesBindAux n (IfZ _ c t1 t2) = countUsesBindAux n c + countUsesBindAux n t1 + countUsesBindAux n t2
+countUsesBindAux n (Lam _ _ _ (Sc1 t)) = countUsesBindAux (n+1) t 
+countUsesBindAux n (App _ t u) = countUsesBindAux n t + countUsesBindAux n u
+countUsesBindAux n (Fix _ _ _ _ _ (Sc2 t)) = countUsesBindAux (n+2) t 
+countUsesBindAux n (Let _ _ _ def (Sc1 t)) = countUsesBindAux n def + countUsesBindAux (n+1) t
+countUsesBindAux n (BinaryOp p op t1 t2) = countUsesBindAux n t1 + countUsesBindAux n t2
+countUsesBindAux _ _ = 0
+
+usesLetInBody :: TTerm -> Bool
+usesLetInBody t = 0 /= countUsesBindAux 0 t
+
 countUsesBind :: MonadFD4 m => TTerm -> m Int
-countUsesBind term = go 0 term
-  where
-    go n (V _ (Bound n')) = if n == n' then return 1 else return 0
-    go n (Print _ str t) = go n t
-    go n (IfZ _ c t1 t2) = do
-                              cs <- go n c 
-                              t1s <- go n t1 
-                              t2s <- go n t2
-                              return (cs + t1s + t2s)
-    go n (Lam _ _ _ (Sc1 t)) = go (n+1) t 
-    go n (App _ t u) = do
-                          ts <- go n t 
-                          us <- go n u
-                          return (ts + us)
-    go n (Fix _ _ _ _ _ (Sc2 t)) = go (n+2) t 
-    go n (Let _ _ _ def (Sc1 t)) = do
-                                      defs <- go n def 
-                                      ts <- go (n+1) t
-                                      return (defs + ts)
-    go n (BinaryOp p op t1 t2) = do 
-                                    t1s <- go n t1 
-                                    t2s <- go n t2
-                                    return (t1s + t2s)
-    go _ _ = return 0
+countUsesBind term = return $ countUsesBindAux 0 term
 
 hasEffects :: MonadFD4 m => TTerm -> m Bool
 hasEffects (V _ (Bound _)) = return False

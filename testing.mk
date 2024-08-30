@@ -197,7 +197,7 @@ accept: $(patsubst %,%.accept,$(TESTS))
 %.exe: %.c 
 	$(Q)$(CC) $< -Wno-int-conversion -Wno-incompatible-pointer-types runtime.c -lgc -o $@
 
-# Correr bytecode para generar la salida (con VM en C).
+# Correr en C.
 # Finalmente la comparación.
 %.fd4.actual_out_c: %.exe
 	$(Q)./$< > $@

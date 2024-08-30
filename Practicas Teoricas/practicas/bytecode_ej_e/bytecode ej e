@@ -1,0 +1,11 @@
+Compilando con 32 bits sin tailcall
+Probando una corrida de ackermann 3 11 en nuestra maquina virtual (Haskell) (la version de 32 bits sin tailcall) tomó 3 minutos 53 segundos.
+Corriendolo en la VM hecha en C, tardó 33.25s
+
+El programa en C
+En C tardó 0.84 segundos
+
+La misma funcion pero en haskell puro tardó 2 minutos 3 segundos.
+
+La primera descrepancia es muy facil de ver y se debe completamente a usar la maquina virtual en haskell, ya que al usar la misma pero hecha en C tarda muchisimo menos. Incluso la funcion de ackermann hecha de igual manera que en C tarda mas de 2 minutos debido a la ineficiencia del lenguaje. 
+La segunda diferencia se debe a que la maquina virtual tiene el costo de interpretar el bytecode, mantener el entorno, la pila y todo el manejo de memoria que esto involucra.
