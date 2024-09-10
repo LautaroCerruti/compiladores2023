@@ -1,0 +1,21 @@
+let rec suma (m n:Nat) : Nat = 
+    ifz m then n else suma (m-1) (n+1)
+
+let sumTest : Nat = print "suma 150 + 163 = " (suma 150 163)
+
+let rec mult (m n:Nat) : Nat = 
+    ifz m then 0 else suma n (mult (m-1) n)
+
+let multTest : Nat = print "multiplicacion 55 * 37 = " (mult 55 37)
+
+let rec fact (n:Nat) : Nat = 
+    ifz n then 1 else mult n (fact (n-1))
+
+let factTest : Nat = print "factorial de 7 = " (fact 7)
+
+let rec fib (n:Nat) : Nat = 
+    ifz n then 0 else (
+        ifz (n-1) then 1 else suma (fib (n-1)) (fib (n-2))
+    )
+
+let fibTest : Nat = print "fibonacci de 10 = " (fib 10)
