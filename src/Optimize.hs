@@ -138,8 +138,9 @@ inlineExpansion (App p g@(V _ (Global n)) u) = do
                                                   case lt of
                                                     Nothing -> failFD4 "Variable no declarada"
                                                     Just t -> do 
+                                                                he <- hasEffects t
                                                                 ts <- termSize t
-                                                                if ts < termSizeLimit
+                                                                if not he && ts < termSizeLimit
                                                                 then inlineExpansion $ App p t u
                                                                 else do u' <- inlineExpansion u
                                                                         return $ App p g u'
@@ -166,8 +167,9 @@ inlineExpansion g@(V i (Global n)) = do
                                       case lt of
                                         Nothing -> failFD4 "Variable no declarada"
                                         Just t -> do 
+                                                    he <- hasEffects t
                                                     ts <- termSize t
-                                                    if ts < termSizeLimit 
+                                                    if not he && ts < termSizeLimit 
                                                     then inlineExpansion t
                                                     else return g
 inlineExpansion t = return t
