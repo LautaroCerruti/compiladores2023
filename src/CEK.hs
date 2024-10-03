@@ -98,7 +98,18 @@ runCEK t = do
             v <- if p then seekProf t [] [] else seek t [] []
             return $ toTTerm v
 
+-- Env -> termino -> profundidad -> termino reescrito
+replaceBoundsWithEnvVals :: Env -> TTerm -> Int -> TTerm
+replaceBoundsWithEnvVals e t@(V p (Bound i)) d = if i > d then toTTerm (e !! (i - d - 1)) else t
+replaceBoundsWithEnvVals e (App p t1 t2) d = App p (replaceBoundsWithEnvVals e t1 d) (replaceBoundsWithEnvVals e t2 d)
+replaceBoundsWithEnvVals e (IfZ p t1 t2 t3) d = IfZ p (replaceBoundsWithEnvVals e t1 d) (replaceBoundsWithEnvVals e t2 d) (replaceBoundsWithEnvVals e t3 d)
+replaceBoundsWithEnvVals e (BinaryOp p op t1 t2) d = BinaryOp p op (replaceBoundsWithEnvVals e t1 d) (replaceBoundsWithEnvVals e t2 d)
+replaceBoundsWithEnvVals e (Let p x ty t1 (Sc1 t2)) d = Let p x ty (replaceBoundsWithEnvVals e t1 d) (Sc1 (replaceBoundsWithEnvVals e t2 (d + 1)))
+replaceBoundsWithEnvVals e (Lam p x ty (Sc1 t)) d = Lam p x ty (Sc1 (replaceBoundsWithEnvVals e t (d + 1)))
+replaceBoundsWithEnvVals e (Fix p f fty x xty (Sc2 t)) d = Fix p f fty x xty (Sc2 (replaceBoundsWithEnvVals e t (d + 2)))
+replaceBoundsWithEnvVals _ t _ = t
+
 toTTerm :: Val -> TTerm
 toTTerm (ConstN n) = Const (NoPos, NatTy Nothing) (CNat n)
-toTTerm (VClos (ClosFun _ x ty t)) = Lam (NoPos, ty) x ty (Sc1 t)
-toTTerm (VClos (ClosFix _ f fty x ty t)) = Fix (NoPos, ty) f fty x ty (Sc2 t)
+toTTerm (VClos (ClosFun env x ty t)) = Lam (NoPos, ty) x ty (Sc1 (replaceBoundsWithEnvVals env t 0))
+toTTerm (VClos (ClosFix env f fty x ty t)) = Fix (NoPos, ty) f fty x ty (Sc2 (replaceBoundsWithEnvVals env t 1))
