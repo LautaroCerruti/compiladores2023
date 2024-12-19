@@ -67,6 +67,41 @@ usesLetInBody t = 0 /= countUsesBindAux 0 t
 countUsesBind :: MonadFD4 m => TTerm -> m Int
 countUsesBind term = return $ countUsesBindAux 0 term
 
+hasEffectsAux :: MonadFD4 m => TTerm -> m Bool
+hasEffectsAux (V _ (Bound _)) = return False
+hasEffectsAux (V _ (Free _)) = return False
+hasEffectsAux (V _ (Global n)) = do 
+                                lt <- lookupDecl n
+                                case lt of
+                                  Nothing -> failFD4 "Variable no declarada"
+                                  Just t -> hasEffectsAux t
+hasEffectsAux (Const _ _) = return False
+hasEffectsAux (Print _ str t) = return True
+hasEffectsAux (IfZ _ c t1 t2) = do
+                                cb <- hasEffectsAux c 
+                                t1b <- hasEffectsAux t1 
+                                t2b <- hasEffectsAux t2
+                                return (cb || t1b || t2b)
+hasEffectsAux (Lam _ _ _ (Sc1 t)) = hasEffectsAux t
+hasEffectsAux (App _ t u) = do
+                          tb <- hasEffectsAux t 
+                          ub <- hasEffectsAux u
+                          return (tb || ub)
+hasEffectsAux (Fix _ _ _ _ _ (Sc2 t)) = return True  -- un posible efecto es la divergecia y no podemos saber si un fix termina o no, por lo que tomamos como que es un efecto
+hasEffectsAux (Let _ _ _ def (Sc1 t)) = do
+                                        defb <- hasEffectsAux def 
+                                        tb <- hasEffectsAux t
+                                        return (defb || tb)
+hasEffectsAux (BinaryOp p op t1 t2) = do 
+                                      t1b <- hasEffectsAux t1 
+                                      t2b <- hasEffectsAux t2
+                                      return (t1b || t2b)
+
+getFunAndArgs :: TTerm -> (TTerm, [TTerm])
+getFunAndArgs (App _ t u) = let (fun, args) = getFunAndArgs t
+                            in (fun, args ++ [u])
+getFunAndArgs t = (t, [])
+
 hasEffects :: MonadFD4 m => TTerm -> m Bool
 hasEffects (V _ (Bound _)) = return False
 hasEffects (V _ (Free _)) = return False
@@ -82,12 +117,27 @@ hasEffects (IfZ _ c t1 t2) = do
                                 t1b <- hasEffects t1 
                                 t2b <- hasEffects t2
                                 return (cb || t1b || t2b)
-hasEffects (Lam _ _ _ (Sc1 t)) = hasEffects t
-hasEffects (App _ t u) = do
-                          tb <- hasEffects t 
-                          ub <- hasEffects u
-                          return (tb || ub)
-hasEffects (Fix _ _ _ _ _ (Sc2 t)) = return True  -- un posible efecto es la divergecia y no podemos saber si un fix termina o no, por lo que tomamos como que es un efecto
+hasEffects (Lam _ _ _ (Sc1 t)) = return False
+hasEffects app@(App _ t u) = let (fun, args) = getFunAndArgs app
+                             in case fun of
+                                  (Fix _ _ _ _ _ _) -> return True
+                                  (Lam _ _ _ (Sc1 body)) -> do
+                                                              bodyEffects <- hasEffectsAux body
+                                                              argsEffects <- mapM hasEffectsAux args
+                                                              return (bodyEffects || or argsEffects)
+                                  (V _ (Global n)) -> do
+                                                        lt <- lookupDecl n
+                                                        case lt of
+                                                          Nothing -> failFD4 "Variable no declarada"
+                                                          Just glb -> do 
+                                                                        glbEffects <- hasEffectsAux glb
+                                                                        argsEffects <- mapM hasEffectsAux args
+                                                                        return (glbEffects || or argsEffects)
+                                  _ -> do
+                                          funEffects <- hasEffectsAux fun
+                                          argsEffects <- mapM hasEffectsAux args
+                                          return (funEffects || or argsEffects)
+hasEffects (Fix _ _ _ _ _ (Sc2 t)) = return False 
 hasEffects (Let _ _ _ def (Sc1 t)) = do
                                         defb <- hasEffects def 
                                         tb <- hasEffects t

@@ -7,6 +7,7 @@ import Utils (semOp, usesLetInBody, treeChanged, hasEffects, termSize, countUses
 import Common 
 import Global
 import Data.List
+import Control.Monad
 
 deadCodeElimination :: MonadFD4 m => TTerm -> m TTerm
 deadCodeElimination (Let p v ty def (Sc1 t)) = do 
@@ -338,27 +339,33 @@ checkPartialApps d argsC (Let _ _ _ def (Sc1 t)) = (checkPartialApps d argsC def
 checkPartialApps d argsC (V _ (Bound i)) = (d+argsC) == i
 checkPartialApps _ _ _ = False
 
+paramsHaveEffects :: MonadFD4 m => [TTerm] -> m Bool
+paramsHaveEffects l = foldM (\acc x -> hasEffects x >>= \b -> return (acc || b)) False l
+
+appInlineToApp :: MonadFD4 m => TTerm -> m TTerm
+appInlineToApp (App p t u) = do 
+                                t' <- appInlineToApp t
+                                u' <- inlineExpansion u
+                                return $ App p t' u'
+appInlineToApp f = inlineExpansion f
+
 inlineExpansionForFix :: MonadFD4 m => TTerm -> m TTerm
 inlineExpansionForFix app@(App p t u) = 
   let (fix, params) = getFixAndParams app 
       argsC = getArgsCount fix
   in 
     if (length params) /= argsC || argsC == 1 || checkPartialApps 0 argsC (getFixBody fix) 
-    then do t' <- inlineExpansion t -- Caso fix sin aplicar completamente
-            u' <- inlineExpansion u
-            return $ App p t' u'
+    then appInlineToApp app -- Caso fix sin aplicar completamente         
     else 
       let ncp = sort $ getNoChangingParams argsC (getFixBody fix) -- obtenemos los parametros que no cambian en las recursiones
-      in if length ncp == 0
-         then do 
-                t' <- inlineExpansion t
-                u' <- inlineExpansion u
-                return $ App p t' u'
+          rParams = reverse params
+      in paramsHaveEffects (map (\i -> rParams !! i) ncp) >>= \hencp ->
+        if length ncp == 0 || hencp -- Si no hay parametros que no cambian o si los parametros que no cambian tienen efectos
+         then appInlineToApp app
          else do
               ncp' <- if length ncp == argsC then return $ tail ncp else return ncp
               fix' <- rewriteFix argsC ncp' fix
-              let rParams = reverse params
-                  npInit = map (\i -> rParams !! i) ncp'
+              let npInit = map (\i -> rParams !! i) ncp'
                   npTail = map (\i -> rParams !! i) ([0..argsC-1] \\ ncp')
                   app' = buildApp (npTail ++ npInit) fix'
               return $ app'
