@@ -124,6 +124,9 @@ inlineExpansion (Let i n ty def sc@(Sc1 t)) = do
                                                         def' <- inlineExpansion def
                                                         t' <- inlineExpansion t
                                                         return $ Let i n ty def' (Sc1 t')
+-- No contemplamos en el Lam el caso de que el primer argumento de la funcion no sea expandible pero los otros si, 
+-- la forma correcta de implementar esto es revisar si una serie de apps corresponden a una funcion de multiples argumentos 
+-- y hacer la expansion de los argumentos que si son expandibles
 inlineExpansion (App p l@(Lam i n ty sc@(Sc1 t)) u) = do 
                                                   he <- hasEffects u
                                                   us <- termSize u
