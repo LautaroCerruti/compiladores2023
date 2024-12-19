@@ -139,7 +139,7 @@ hasEffects app@(App _ t u) = let (fun, args) = getFunAndArgs app
                                           return (funEffects || or argsEffects)
 hasEffects (Fix _ _ _ _ _ (Sc2 t)) = return False 
 hasEffects (Let _ _ _ def (Sc1 t)) = do
-                                        defb <- hasEffects def 
+                                        defb <- hasEffectsAux def 
                                         tb <- hasEffects t
                                         return (defb || tb)
 hasEffects (BinaryOp p op t1 t2) = do 
