@@ -1,9 +1,11 @@
 module Optimize where
 
 import Lang
-import MonadFD4 ( MonadFD4, lookupDecl, failFD4 )
+import MonadFD4 ( MonadFD4, lookupDecl, failFD4, printFD4 )
 import Subst (subst, shiftIndexes, substWhileFixingIndexes)
-import Utils (semOp, usesLetInBody, treeChanged, hasEffects, termSize, countUsesBind)
+import Utils (semOp, usesLetInBody, treeChanged, hasEffects, termSize, countUsesBind, tterm2term)
+import TypeChecker (tcTerm)
+
 import Common 
 import Global
 import Data.List
@@ -290,12 +292,17 @@ fixType argsC n pc ty@(FunTy t1 t2 name)
   | otherwise = FunTy t1 (fixType argsC (n+1) pc t2) name
 fixType _ _ _ ty = ty
 
+buildFty :: [(Int, BType, Name, Ty)] ->TTerm -> Ty
+buildFty [] fixB = getTy fixB
+buildFty ((_, AB, _, ty):xs) fixB = FunTy ty (buildFty xs fixB) Nothing
+buildFty ((_, FB, _, ty):xs) fixB = buildFty xs fixB
+
 -- ver si los (NoPos, NatTy) estan bien
 -- Funcion que reescribe los bounds dle fix y luego llama a rewriteFixBody para el cuerpo
 -- argsCount -> parametros que tenemos que sacar del fix -> Datos de binds -> indices para los argumentos (se usa para el body) -> body del fix -> term
 rewriteFixAux :: Int -> [Int] -> [(Int, BType, Name, Ty)] -> [Int] -> TTerm -> TTerm
-rewriteFixAux argsC pc ((_, AB, n, ty):funInfo) inds fixB = Lam (NoPos, NatTy Nothing) n ty (Sc1 (rewriteFixAux argsC pc funInfo inds fixB))
-rewriteFixAux argsC pc ((_, FB, fn, fty):((_, AB, n, ty):funInfo)) inds fixB = Fix (NoPos, NatTy Nothing) fn (fixType argsC 0 pc fty) n ty (Sc2 (rewriteFixAux argsC pc funInfo inds fixB))
+rewriteFixAux argsC pc args@((_, AB, n, ty):funInfo) inds fixB = Lam (NoPos, buildFty args fixB) n ty (Sc1 (rewriteFixAux argsC pc funInfo inds fixB))
+rewriteFixAux argsC pc ((_, FB, fn, fty):((_, AB, n, ty):funInfo)) inds fixB = Fix (NoPos, fixType argsC 0 pc fty) fn (fixType argsC 0 pc fty) n ty (Sc2 (rewriteFixAux argsC pc funInfo inds fixB))
 rewriteFixAux argsC pc [] inds fixB = rewriteFixBody 0 argsC pc inds fixB
 rewriteFixAux _ _ _ _ _ = error "No deberia llegar a aca"
 
@@ -312,9 +319,14 @@ rewriteFix argsC pc t = let (fixD, argsD) = getBoundsInfo argsC t -- Obtenemos l
                                                     Nothing -> error "No deberia pasar") [0 .. argsC]
                         in return $ rewriteFixAux argsC pc no indexes (getFixBody t)
 
-buildApp :: [TTerm] -> TTerm -> TTerm
-buildApp [] fix = fix
-buildApp (x:xs) fix = App (NoPos, NatTy Nothing) (buildApp xs fix) x
+getAppTy :: Ty -> Int -> Ty
+getAppTy ty 0 = ty
+getAppTy (FunTy _ t _) n = getAppTy t (n-1)
+getAppTy _ _ = error "No deberia llegar aca"
+
+buildApp :: [TTerm] -> TTerm -> Int -> TTerm
+buildApp [] fix ty = fix
+buildApp (x:xs) fix rmvTy = App (NoPos, getAppTy (getTy fix) rmvTy) (buildApp xs fix (rmvTy-1)) x
 
 countArgs :: TTerm -> Int
 countArgs (App _ t _) = 1 + countArgs t
@@ -370,7 +382,7 @@ inlineExpansionForFix app@(App p t u) =
               fix' <- rewriteFix argsC ncp' fix
               let npInit = map (\i -> rParams !! i) ncp'
                   npTail = map (\i -> rParams !! i) ([0..argsC-1] \\ ncp')
-                  app' = buildApp (npTail ++ npInit) fix'
+                  app' = buildApp (npTail ++ npInit) fix' argsC
               return $ app'
 inlineExpansionForFix _ = failFD4 "No se puede hacer inline Expansion Fix de algo que no es un fix"
 
@@ -386,4 +398,7 @@ optimizeTerm t n = do
                     t3 <- deadCodeElimination t2
                     if n >= 1 && treeChanged t t3 
                       then optimizeTerm t3 (n-1)
-                      else return t3
+                      else do 
+                        woTypes <- tterm2term t3
+                        t4 <- tcTerm woTypes
+                        return t4

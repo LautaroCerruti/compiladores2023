@@ -15,7 +15,11 @@ freshName str = do
 
 tyToIrTy :: Ty -> IrTy
 tyToIrTy (NatTy _) = IrInt
-tyToIrTy (FunTy _ _ _) = IrFunTy
+tyToIrTy (FunTy _ _ _) = IrClo
+
+getRetTy :: Ty -> IrTy
+getRetTy (FunTy _ t _) = tyToIrTy t
+getRetTy (NatTy _) = undefined
 
 fvars2Ir :: [(Name, Ty)] -> [Ir]
 fvars2Ir [] = []
@@ -54,7 +58,7 @@ closureConvert (Lam (_, tyf) n ty s@(Sc1 t)) = do
                             clos <- freshName "clos"
                             body <- closureConvert (open n s)
                             let fvars = freeVarsT t
-                                codef = IrFun name (tyToIrTy tyf) [(clos, IrClo), (n, tyToIrTy ty)] (letify clos body fvars)
+                                codef = IrFun name (getRetTy tyf) [(clos, IrClo), (n, tyToIrTy ty)] (letify clos body fvars)
                             tell [codef]
                             return $ MkClosure name (fvars2Ir fvars)
 closureConvert (Fix _ fn fty pn pty s@(Sc2 t)) = do
@@ -63,14 +67,14 @@ closureConvert (Fix _ fn fty pn pty s@(Sc2 t)) = do
                             clos <- freshName "clos"
                             body <- closureConvert (open2 clos param s)
                             let fvars = freeVarsT t
-                                codef = IrFun name (tyToIrTy fty) [(clos, IrClo), (param, tyToIrTy pty)] (letify clos body fvars)
+                                codef = IrFun name (getRetTy fty) [(clos, IrClo), (param, tyToIrTy pty)] (letify clos body fvars)
                             tell [codef]
                             return $ MkClosure name (fvars2Ir fvars)
 
 convertDecl :: Decl TTerm -> StateT Int (Writer [IrDecl]) ()
 convertDecl (Decl _ n ty b) = do d <- IrVal n (tyToIrTy ty) <$> closureConvert b
                                  tell [d]
-
+ 
 runCC :: [Decl TTerm] -> IrDecls
 runCC xs = let ((_, _), irs) = runWriter (runStateT (mapM convertDecl xs) 0)
            in IrDecls irs

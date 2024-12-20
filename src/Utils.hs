@@ -146,3 +146,38 @@ hasEffects (BinaryOp p op t1 t2) = do
                                       t1b <- hasEffects t1 
                                       t2b <- hasEffects t2
                                       return (t1b || t2b)
+
+tterm2term :: MonadFD4 m => TTerm -> m Term
+tterm2term (V i var) = return $ V (fst i) var
+tterm2term (Const i c) = return $ Const (fst i) c
+tterm2term (Lam i n ty (Sc1 t)) = do
+                                    t' <- tterm2term t
+                                    return $ Lam (fst i) n ty (Sc1 t')
+tterm2term (App i t u) = do
+                          t' <- tterm2term t
+                          u' <- tterm2term u
+                          return $ App (fst i) t' u'
+tterm2term (Print i str t) = do
+                                t' <- tterm2term t
+                                return $ Print (fst i) str t'
+tterm2term (BinaryOp i op t u) = do
+                                  t' <- tterm2term t
+                                  u' <- tterm2term u
+                                  return $ BinaryOp (fst i) op t' u'
+tterm2term (Fix i f fty x xty (Sc2 t)) = do
+                                            t' <- tterm2term t
+                                            return $ Fix (fst i) f fty x xty (Sc2 t')
+tterm2term (IfZ i c t e) = do
+                            c' <- tterm2term c
+                            t' <- tterm2term t
+                            e' <- tterm2term e
+                            return $ IfZ (fst i) c' t' e'
+tterm2term (Let i n ty e (Sc1 t)) = do 
+                                      e' <- tterm2term e
+                                      t' <- tterm2term t
+                                      return $ Let (fst i) n ty e' (Sc1 t')
+
+ttdecle2tdecl :: MonadFD4 m => Decl TTerm -> m (Decl Term)
+ttdecle2tdecl (Decl p n ty t) = do
+  t' <- tterm2term t
+  return $ Decl p n ty t'

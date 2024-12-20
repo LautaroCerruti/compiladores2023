@@ -227,7 +227,6 @@ handleDecl d@(SDDecl _ _ _ _) = do
     case m of
       Typecheck -> do 
           td <- typecheckDecl d
-          -- addDecl td
           opt <- getOpt
           td' <- if opt then optimizeDecl td else return td
           addDecl td'
