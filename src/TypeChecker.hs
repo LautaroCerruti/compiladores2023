@@ -9,7 +9,8 @@ Stability   : experimental
 -}
 module TypeChecker (
    tc,
-   tcDecl 
+   tcDecl, 
+   tcTerm
    ) where
 
 import Lang
@@ -119,3 +120,9 @@ tcDecl (Decl p n ty t) = do
                   expect ty tt
                   return (Decl p n ty tt)
         Just _  -> failPosFD4 p $ n ++" ya está declarado"
+
+tcTerm :: MonadFD4 m => Term -> m TTerm
+tcTerm t = do
+  s <- get
+  tt <- tc t (tyEnv s)
+  return tt

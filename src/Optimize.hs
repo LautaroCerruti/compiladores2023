@@ -1,12 +1,15 @@
 module Optimize where
 
 import Lang
-import MonadFD4 ( MonadFD4, lookupDecl, failFD4 )
+import MonadFD4 ( MonadFD4, lookupDecl, failFD4, printFD4 )
 import Subst (subst, shiftIndexes, substWhileFixingIndexes)
-import Utils (semOp, usesLetInBody, treeChanged, hasEffects, termSize, countUsesBind)
+import Utils (semOp, usesLetInBody, treeChanged, hasEffects, termSize, countUsesBind, tterm2term)
+import TypeChecker (tcTerm)
+
 import Common 
 import Global
 import Data.List
+import Control.Monad
 
 deadCodeElimination :: MonadFD4 m => TTerm -> m TTerm
 deadCodeElimination (Let p v ty def (Sc1 t)) = do 
@@ -123,6 +126,9 @@ inlineExpansion (Let i n ty def sc@(Sc1 t)) = do
                                                         def' <- inlineExpansion def
                                                         t' <- inlineExpansion t
                                                         return $ Let i n ty def' (Sc1 t')
+-- No contemplamos en el Lam el caso de que el primer argumento de la funcion no sea expandible pero los otros si, 
+-- la forma correcta de implementar esto es revisar si una serie de apps corresponden a una funcion de multiples argumentos 
+-- y hacer la expansion de los argumentos que si son expandibles
 inlineExpansion (App p l@(Lam i n ty sc@(Sc1 t)) u) = do 
                                                   he <- hasEffects u
                                                   us <- termSize u
@@ -286,12 +292,17 @@ fixType argsC n pc ty@(FunTy t1 t2 name)
   | otherwise = FunTy t1 (fixType argsC (n+1) pc t2) name
 fixType _ _ _ ty = ty
 
+buildFty :: [(Int, BType, Name, Ty)] ->TTerm -> Ty
+buildFty [] fixB = getTy fixB
+buildFty ((_, AB, _, ty):xs) fixB = FunTy ty (buildFty xs fixB) Nothing
+buildFty ((_, FB, _, ty):xs) fixB = buildFty xs fixB
+
 -- ver si los (NoPos, NatTy) estan bien
 -- Funcion que reescribe los bounds dle fix y luego llama a rewriteFixBody para el cuerpo
 -- argsCount -> parametros que tenemos que sacar del fix -> Datos de binds -> indices para los argumentos (se usa para el body) -> body del fix -> term
 rewriteFixAux :: Int -> [Int] -> [(Int, BType, Name, Ty)] -> [Int] -> TTerm -> TTerm
-rewriteFixAux argsC pc ((_, AB, n, ty):funInfo) inds fixB = Lam (NoPos, NatTy Nothing) n ty (Sc1 (rewriteFixAux argsC pc funInfo inds fixB))
-rewriteFixAux argsC pc ((_, FB, fn, fty):((_, AB, n, ty):funInfo)) inds fixB = Fix (NoPos, NatTy Nothing) fn (fixType argsC 0 pc fty) n ty (Sc2 (rewriteFixAux argsC pc funInfo inds fixB))
+rewriteFixAux argsC pc args@((_, AB, n, ty):funInfo) inds fixB = Lam (NoPos, buildFty args fixB) n ty (Sc1 (rewriteFixAux argsC pc funInfo inds fixB))
+rewriteFixAux argsC pc ((_, FB, fn, fty):((_, AB, n, ty):funInfo)) inds fixB = Fix (NoPos, fixType argsC 0 pc fty) fn (fixType argsC 0 pc fty) n ty (Sc2 (rewriteFixAux argsC pc funInfo inds fixB))
 rewriteFixAux argsC pc [] inds fixB = rewriteFixBody 0 argsC pc inds fixB
 rewriteFixAux _ _ _ _ _ = error "No deberia llegar a aca"
 
@@ -308,9 +319,14 @@ rewriteFix argsC pc t = let (fixD, argsD) = getBoundsInfo argsC t -- Obtenemos l
                                                     Nothing -> error "No deberia pasar") [0 .. argsC]
                         in return $ rewriteFixAux argsC pc no indexes (getFixBody t)
 
-buildApp :: [TTerm] -> TTerm -> TTerm
-buildApp [] fix = fix
-buildApp (x:xs) fix = App (NoPos, NatTy Nothing) (buildApp xs fix) x
+getAppTy :: Ty -> Int -> Ty
+getAppTy ty 0 = ty
+getAppTy (FunTy _ t _) n = getAppTy t (n-1)
+getAppTy _ _ = error "No deberia llegar aca"
+
+buildApp :: [TTerm] -> TTerm -> Int -> TTerm
+buildApp [] fix ty = fix
+buildApp (x:xs) fix rmvTy = App (NoPos, getAppTy (getTy fix) rmvTy) (buildApp xs fix (rmvTy-1)) x
 
 countArgs :: TTerm -> Int
 countArgs (App _ t _) = 1 + countArgs t
@@ -338,29 +354,35 @@ checkPartialApps d argsC (Let _ _ _ def (Sc1 t)) = (checkPartialApps d argsC def
 checkPartialApps d argsC (V _ (Bound i)) = (d+argsC) == i
 checkPartialApps _ _ _ = False
 
+paramsHaveEffects :: MonadFD4 m => [TTerm] -> m Bool
+paramsHaveEffects l = foldM (\acc x -> hasEffects x >>= \b -> return (acc || b)) False l
+
+appInlineToApp :: MonadFD4 m => TTerm -> m TTerm
+appInlineToApp (App p t u) = do 
+                                t' <- appInlineToApp t
+                                u' <- inlineExpansion u
+                                return $ App p t' u'
+appInlineToApp f = inlineExpansion f
+
 inlineExpansionForFix :: MonadFD4 m => TTerm -> m TTerm
 inlineExpansionForFix app@(App p t u) = 
   let (fix, params) = getFixAndParams app 
       argsC = getArgsCount fix
   in 
     if (length params) /= argsC || argsC == 1 || checkPartialApps 0 argsC (getFixBody fix) 
-    then do t' <- inlineExpansion t -- Caso fix sin aplicar completamente
-            u' <- inlineExpansion u
-            return $ App p t' u'
+    then appInlineToApp app -- Caso fix sin aplicar completamente         
     else 
       let ncp = sort $ getNoChangingParams argsC (getFixBody fix) -- obtenemos los parametros que no cambian en las recursiones
-      in if length ncp == 0
-         then do 
-                t' <- inlineExpansion t
-                u' <- inlineExpansion u
-                return $ App p t' u'
+          rParams = reverse params
+      in paramsHaveEffects (map (\i -> rParams !! i) ncp) >>= \hencp ->
+        if length ncp == 0 || hencp -- Si no hay parametros que no cambian o si los parametros que no cambian tienen efectos
+         then appInlineToApp app
          else do
               ncp' <- if length ncp == argsC then return $ tail ncp else return ncp
               fix' <- rewriteFix argsC ncp' fix
-              let rParams = reverse params
-                  npInit = map (\i -> rParams !! i) ncp'
+              let npInit = map (\i -> rParams !! i) ncp'
                   npTail = map (\i -> rParams !! i) ([0..argsC-1] \\ ncp')
-                  app' = buildApp (npTail ++ npInit) fix'
+                  app' = buildApp (npTail ++ npInit) fix' argsC
               return $ app'
 inlineExpansionForFix _ = failFD4 "No se puede hacer inline Expansion Fix de algo que no es un fix"
 
@@ -376,4 +398,7 @@ optimizeTerm t n = do
                     t3 <- deadCodeElimination t2
                     if n >= 1 && treeChanged t t3 
                       then optimizeTerm t3 (n-1)
-                      else return t3
+                      else do 
+                        woTypes <- tterm2term t3
+                        t4 <- tcTerm woTypes
+                        return t4
